@@ -1,0 +1,133 @@
+import streamlit as st
+import easyocr
+from PIL import Image
+import re
+import pandas as pd
+
+# --- 1. ตั้งค่าหน้ากระดาษ ---
+st.set_page_config(page_title="ระบบตรวจสอบคุณสมบัติอาจารย์พิเศษ", layout="wide")
+
+# --- 2. ฟังก์ชันหลักสำหรับตรวจสอบ ---
+@st.cache_resource
+def load_ocr():
+    # โหลด AI สำหรับอ่านภาษาไทยและอังกฤษ
+    return easyocr.Reader(['th', 'en'])
+
+def extract_years(text):
+    # ค้นหาปี พ.ศ. 2564-2568 หรือ ค.ศ. 2021-2025
+    years = re.findall(r'\b(256[4-8]|202[1-5])\b', text)
+    valid_years = []
+    for y in years:
+        y_int = int(y)
+        # ถ้าเป็น พ.ศ. ให้แปลงเป็น ค.ศ.
+        converted = y_int if y_int < 2500 else y_int - 543
+        valid_years.append(converted)
+    return list(set(valid_years))
+
+# --- 3. ส่วนการแสดงผลดีไซน์ (UI) ---
+
+# ส่วน Header สีน้ำเงิน (เลียนแบบ Mahidol Style)
+st.markdown("""
+    <div style="background-color: #0046ad; padding: 25px; border-radius: 15px; text-align: center; color: white; margin-bottom: 20px;">
+        <h1 style="margin: 0; font-family: sans-serif;">🎓 ระบบตรวจสอบคุณสมบัติอาจารย์พิเศษ</h1>
+        <p style="margin: 5px;">ตรวจสอบผลงานตีพิมพ์ 1 เรื่อง ในรอบ 5 ปี (2564-2568)</p>
+    </div>
+""", unsafe_allow_html=True)
+
+# ส่วน Stepper (จำลองขั้นตอน 1-4 ตามรูปที่ 1 และ 2)
+if 'step' not in st.session_state:
+    st.session_state.step = 1
+
+col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+steps = ["ข้อมูลหลัก", "อัปโหลดไฟล์", "ประมวลผล", "ผลตรวจสอบ"]
+for i, step_name in enumerate(steps, 1):
+    with [col_s1, col_s2, col_s3, col_s4][i-1]:
+        color = "#0046ad" if st.session_state.step >= i else "#ddd"
+        st.markdown(f"""
+            <div style="text-align: center;">
+                <div style="background: {color}; color: white; border-radius: 50%; width: 35px; height: 35px; 
+                display: flex; align-items: center; justify-content: center; margin: 0 auto;">{i}</div>
+                <div style="font-size: 12px; margin-top: 5px;">{step_name}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+st.divider()
+
+# --- ขั้นตอนที่ 1: กรอกข้อมูล ---
+if st.session_state.step == 1:
+    st.subheader("📝 ขั้นตอนที่ 1: กรอกข้อมูลเบื้องต้น")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.session_state.name_th = st.text_input("ชื่อ-นามสกุล (ภาษาไทย)", placeholder="กรอกชื่อ-นามสกุล")
+        st.session_state.name_en = st.text_input("Name-Surname (English)", placeholder="Enter Name-Surname")
+    with c2:
+        st.session_state.id_card = st.text_input("รหัสอาจารย์ / เลขบัตรประชาชน", placeholder="ระบุรหัส")
+        st.session_state.dept = st.text_input("คณะ / สังกัด", placeholder="ระบุสังกัด")
+    
+    if st.button("ถัดไป ➔"):
+        if st.session_state.name_th:
+            st.session_state.step = 2
+            st.rerun()
+        else:
+            st.error("กรุณากรอกชื่อ-นามสกุลก่อนไปขั้นตอนถัดไป")
+
+# --- ขั้นตอนที่ 2: อัปโหลดไฟล์ ---
+elif st.session_state.step == 2:
+    st.subheader("📤 ขั้นตอนที่ 2: อัปโหลดไฟล์ CV หรือผลงานวิจัย")
+    
+    # ส่วนแสดงข้อมูลที่บันทึกไว้ (แถบสีฟ้าตามรูปที่ 2)
+    st.markdown(f"""
+        <div style="background-color: #e7f3ff; padding: 15px; border-radius: 10px; border-left: 5px solid #0046ad; margin-bottom: 20px;">
+            <span style="color: #555;">📋 <b>ข้อมูลที่บันทึกไว้:</b></span><br>
+            <span style="font-size: 14px;">ชื่ออาจารย์: {st.session_state.name_th} | สังกัด: {st.session_state.dept}</span>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # ช่องอัปโหลด (จำลอง Drop zone สีเหลืองตามรูปที่ 2)
+    st.markdown("""
+        <div style="border: 2px dashed #d4af37; background-color: #fffdf0; padding: 40px; border-radius: 10px; text-align: center; margin-bottom: 10px;">
+            <p style="font-size: 18px; color: #666; margin: 0;">📄 คลิกเพื่อเลือกไฟล์ หรือลากไฟล์รูปสแกนมาวางที่นี่</p>
+            <p style="color: #999; font-size: 12px;">รองรับไฟล์รูปภาพ .jpg, .png (สแกนหน้าแรกของบทความ)</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    uploaded_file = st.file_uploader("", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
+
+    col_btn1, col_btn2 = st.columns([1, 5])
+    with col_btn1:
+        if st.button("⬅ ย้อนกลับ"):
+            st.session_state.step = 1
+            st.rerun()
+    with col_btn2:
+        if uploaded_file:
+            if st.button("เริ่มประมวลผล ➔"):
+                st.session_state.uploaded_file = uploaded_file
+                st.session_state.step = 3
+                st.rerun()
+
+# --- ขั้นตอนที่ 3: ประมวลผลและแสดงผลตรวจสอบ ---
+elif st.session_state.step == 3:
+    st.subheader("🔍 ขั้นตอนที่ 3: ผลการตรวจสอบคุณสมบัติ")
+    
+    with st.spinner("AI กำลังอ่านข้อมูลและตรวจสอบฐานข้อมูล Scopus/ThaiJO..."):
+        reader = load_ocr()
+        image = Image.open(st.session_state.uploaded_file)
+        # อ่านข้อความจากรูป
+        ocr_results = reader.readtext(image, detail=0)
+        full_text = " ".join(ocr_results)
+        
+        # ตรวจสอบปี
+        found_years = extract_years(full_text)
+        # ตรวจสอบ Keyword ฐานข้อมูล (จำลองการเช็ค Scopus/ThaiJO)
+        has_db = any(k in full_text.lower() for k in ["journal", "วารสาร", "issn", "scopus", "tci"])
+        
+        is_pass = len(found_years) > 0 and has_db
+
+        if is_pass:
+            st.balloons()
+            st.success("### 🎉 ผลการตรวจสอบ: ผ่านคุณสมบัติ")
+            st.info(f"พบผลงานตีพิมพ์ในปี พ.ศ.: {', '.join([str(y+543) for y in found_years])}")
+        else:
+            st.error("### ❌ ผลการตรวจสอบ: ไม่ผ่านคุณสมบัติ")
+            if not found_years:
+                st.warning("สาเหตุ: ไม่พบปีที่พิมพ์ในช่วง พ.ศ
