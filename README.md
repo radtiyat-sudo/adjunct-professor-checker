@@ -127,7 +127,7 @@ python3 -m http.server 8000
 ## ติดตั้งบน Google Sheets + Apps Script (แนะนำ — ใช้งานหลายคนพร้อมกัน)
 เปิดระบบจาก URL ของ Apps Script ได้เลย ไม่ต้องใช้ GitHub Pages
 1. เปิด Google Sheet ที่จะใช้เก็บข้อมูล แล้วไปที่ **ส่วนขยาย > Apps Script**
-2. ในไฟล์ `Code.gs` ลบโค้ดเดิมให้หมด แล้ววางโค้ดจาก [`apps-script/Code.gs`](apps-script/Code.gs) (248+ บรรทัด)
+2. ในไฟล์ `Code.gs` ลบโค้ดเดิมให้หมด แล้ววางโค้ดจาก [`apps-script/Code.gs`](apps-script/Code.gs) (261 บรรทัด)
 3. กด **+ > HTML** ตั้งชื่อว่า `index` (ไม่ต้องพิมพ์ .html) ลบเนื้อหาเดิมทิ้ง แล้ววางเนื้อหาจาก [`apps-script/index.html`](apps-script/index.html) (ไฟล์เดียวที่รวมหน้าเว็บทั้งหมด)
 4. บันทึก เลือกฟังก์ชัน `setup` แล้วกด **Run** หนึ่งครั้ง จากนั้นอนุญาตสิทธิ์ ระบบจะสร้างชีต Programs, Lecturers, Works, Users, Externals, Settings และบัญชี `admin` / `admin1234`
 5. **Deploy > New deployment > Web app** ตั้ง Execute as: **Me** และ Who has access: **Anyone** (หรือ "Anyone within mahidol.ac.th" ถ้าต้องการให้เข้าได้เฉพาะคนในองค์กร)
