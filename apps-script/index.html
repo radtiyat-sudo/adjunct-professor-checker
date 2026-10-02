@@ -1,3 +1,692 @@
+<!doctype html>
+<!-- ไฟล์นี้สร้างอัตโนมัติจาก tools/build_gas.py — แก้ไขที่ index.html และ assets/ แล้ว build ใหม่ -->
+<html lang="th" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ระบบติดตามผลงานวิชาการ | บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)</title>
+  <meta name="description" content="ระบบกำกับติดตามผลงานวิชาการอาจารย์และผู้ทรงคุณวุฒิภายนอก บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR) ตามประกาศ ก.พ.อ. พ.ศ. 2562">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+/* ===== Theme tokens ===== */
+:root {
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-2: #f8f9fd;
+  --border: #e3e7f0;
+  --text: #1a2236;
+  --muted: #5d6882;
+  --primary: #1d3f8f;
+  --primary-strong: #142e6b;
+  --primary-soft: #e7edfb;
+  --accent: #c8961e;
+  --accent-soft: #fbf3df;
+  --success: #12804f;
+  --success-soft: #e3f5ec;
+  --warning: #a46200;
+  --warning-soft: #fdf1dc;
+  --danger: #c0392b;
+  --danger-soft: #fce8e6;
+  --info: #0e6ea8;
+  --info-soft: #e2f1fa;
+  --violet: #6b46c1;
+  --violet-soft: #efe9fb;
+  --neutral: #55607a;
+  --neutral-soft: #eef0f5;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 4px 16px rgba(16, 24, 40, .06);
+  --radius: 14px;
+  --radius-sm: 9px;
+  --sidebar: #0f1f47;
+  --sidebar-text: #c9d3ee;
+  --sidebar-active: rgba(255, 255, 255, .12);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1220; --surface: #151c2e; --surface-2: #1a2238; --border: #273150;
+    --text: #e6eaf5; --muted: #98a3c0; --primary: #7d9cf0; --primary-strong: #a3baf7; --primary-soft: #1f2b4d;
+    --accent: #e6b84a; --accent-soft: #3a3020;
+    --success: #4cc790; --success-soft: #15332a; --warning: #f0b048; --warning-soft: #3a2c14;
+    --danger: #f07a6c; --danger-soft: #3d1d1c; --info: #5bb5ea; --info-soft: #142e40;
+    --violet: #b39af0; --violet-soft: #2a2245; --neutral: #a6afc8; --neutral-soft: #222b42;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
+    --sidebar: #0a1022; --sidebar-text: #aeb9d8; --sidebar-active: rgba(125, 156, 240, .16);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1220; --surface: #151c2e; --surface-2: #1a2238; --border: #273150;
+  --text: #e6eaf5; --muted: #98a3c0; --primary: #7d9cf0; --primary-strong: #a3baf7; --primary-soft: #1f2b4d;
+  --accent: #e6b84a; --accent-soft: #3a3020;
+  --success: #4cc790; --success-soft: #15332a; --warning: #f0b048; --warning-soft: #3a2c14;
+  --danger: #f07a6c; --danger-soft: #3d1d1c; --info: #5bb5ea; --info-soft: #142e40;
+  --violet: #b39af0; --violet-soft: #2a2245; --neutral: #a6afc8; --neutral-soft: #222b42;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
+  --sidebar: #0a1022; --sidebar-text: #aeb9d8; --sidebar-active: rgba(125, 156, 240, .16);
+  color-scheme: dark;
+}
+
+/* ===== Base ===== */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: 'IBM Plex Sans Thai', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--primary); }
+h1, h2, h3, h4 { margin: 0; line-height: 1.35; }
+button, input, select, textarea { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+.skip-link { position: absolute; left: -999px; top: 8px; background: var(--primary); color: #fff; padding: 8px 12px; border-radius: 8px; z-index: 100; }
+.skip-link:focus { left: 8px; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+[data-icon] { display: inline-flex; width: 18px; height: 18px; flex: none; }
+[data-icon] svg { width: 100%; height: 100%; }
+
+/* ===== Layout ===== */
+.layout { display: grid; grid-template-columns: 252px 1fr; min-height: 100vh; }
+.sidebar {
+  background: var(--sidebar); color: var(--sidebar-text);
+  display: flex; flex-direction: column; padding: 18px 14px;
+  position: sticky; top: 0; height: 100vh; z-index: 40;
+}
+.brand { display: flex; gap: 11px; align-items: center; padding: 4px 8px 20px; }
+.brand-logo { width: 40px; height: 40px; border-radius: 11px; background: linear-gradient(135deg, #c8961e, #f0c75a); color: #142e6b; display: grid; place-items: center; flex: none; }
+.brand-title { color: #fff; font-weight: 700; font-size: 15px; }
+.brand-sub { font-size: 11.5px; opacity: .75; }
+.nav { display: flex; flex-direction: column; gap: 3px; }
+.nav a {
+  display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 10px;
+  color: var(--sidebar-text); text-decoration: none; font-weight: 500; font-size: 14.5px;
+}
+.nav a:hover { background: rgba(255, 255, 255, .06); color: #fff; }
+.nav a.active { background: var(--sidebar-active); color: #fff; box-shadow: inset 3px 0 0 var(--accent); }
+.sidebar-foot { margin-top: auto; padding: 12px 8px 0; font-size: 12px; }
+.sync-state { display: flex; align-items: center; gap: 7px; opacity: .85; }
+.sync-state::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #8a94b0; }
+.sync-state.online::before { background: #4cc790; }
+
+.main-wrap { min-width: 0; display: flex; flex-direction: column; }
+.topbar {
+  position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 12px;
+  padding: 12px 28px; background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
+}
+.topbar-title { font-weight: 700; font-size: 17px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar-actions { display: flex; gap: 8px; align-items: center; }
+.content { padding: 24px 28px 64px; max-width: 1320px; width: 100%; margin: 0 auto; outline: none; }
+
+.global-search { position: relative; display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 0 10px; height: 40px; color: var(--muted); }
+.global-search input { border: 0; outline: 0; background: transparent; width: 220px; color: var(--text); }
+.search-pop { position: absolute; top: 46px; right: 0; width: 320px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; max-height: 360px; overflow: auto; }
+.search-pop a { display: block; padding: 8px 10px; border-radius: 8px; text-decoration: none; color: var(--text); }
+.search-pop a:hover, .search-pop a.focus { background: var(--primary-soft); }
+.search-pop small { color: var(--muted); display: block; }
+
+.icon-btn { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); display: grid; place-items: center; cursor: pointer; color: var(--text); }
+.icon-btn:hover { border-color: var(--primary); color: var(--primary); }
+.only-mobile { display: none; }
+
+/* ===== Components ===== */
+.page-head { display: flex; gap: 16px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; margin-bottom: 20px; }
+.page-head h1 { font-size: 24px; }
+.page-head p { margin: 4px 0 0; color: var(--muted); }
+
+.hero {
+  border-radius: 18px; padding: 26px 28px; color: #fff; margin-bottom: 22px;
+  background: radial-gradient(circle at 85% 20%, rgba(230, 184, 74, .35), transparent 40%), linear-gradient(120deg, #142e6b, #1d3f8f 55%, #2b55b8);
+  display: flex; gap: 20px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+}
+.hero h1 { font-size: 23px; }
+.hero p { margin: 6px 0 0; opacity: .85; }
+.hero .chip { background: rgba(255, 255, 255, .14); color: #fff; border: 1px solid rgba(255, 255, 255, .25); }
+.hero .btn.ghost { color: #fff; border-color: rgba(255, 255, 255, .4); }
+.hero .btn.ghost:hover { background: rgba(255, 255, 255, .12); }
+.hero .btn.primary { background: #fff; color: #142e6b; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 40px; padding: 0 16px;
+  border-radius: 10px; border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+  font-weight: 600; font-size: 14px; text-decoration: none; color: var(--text); white-space: nowrap;
+}
+.btn:hover { border-color: var(--primary); color: var(--primary); }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+:root[data-theme="dark"] .btn.primary { color: #0d1220; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.primary { color: #0d1220; } }
+.btn.primary:hover { background: var(--primary-strong); color: #fff; }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--danger); }
+.btn.danger:hover { border-color: var(--danger); background: var(--danger-soft); }
+.btn.sm { height: 32px; padding: 0 11px; font-size: 13px; border-radius: 8px; }
+.btn[disabled] { opacity: .55; cursor: not-allowed; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.card-pad { padding: 20px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.card-head h2, .card-head h3 { font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.card-body { padding: 18px 20px; }
+
+.grid { display: grid; gap: 16px; }
+.grid.stats { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 18px; }
+.grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid.side { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+
+.stat { padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; }
+.stat-top { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 14px; }
+.stat-ico { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; }
+.stat-num { font-size: 32px; font-weight: 700; line-height: 1.1; }
+.stat-foot { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+.tone-primary { background: var(--primary-soft); color: var(--primary); }
+.tone-success { background: var(--success-soft); color: var(--success); }
+.tone-warning { background: var(--warning-soft); color: var(--warning); }
+.tone-danger  { background: var(--danger-soft);  color: var(--danger); }
+.tone-info    { background: var(--info-soft);    color: var(--info); }
+.tone-violet  { background: var(--violet-soft);  color: var(--violet); }
+.tone-neutral { background: var(--neutral-soft); color: var(--neutral); }
+.tone-accent  { background: var(--accent-soft);  color: var(--accent); }
+
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.chip.dot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+/* Forms */
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+.form-grid .full { grid-column: 1 / -1; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field > span { font-size: 13.5px; font-weight: 600; color: var(--muted); }
+.field > span em { color: var(--danger); font-style: normal; }
+.field small { color: var(--muted); font-size: 12.5px; }
+.input, .field input, .field select, .field textarea {
+  width: 100%; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text);
+}
+.field textarea { height: auto; min-height: 76px; padding: 9px 12px; resize: vertical; }
+.input:focus, .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+.check input { width: 17px; height: 17px; accent-color: var(--primary); }
+
+.toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.toolbar .input { width: auto; min-width: 160px; height: 36px; }
+.toolbar .grow { flex: 1; min-width: 200px; }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table th { text-align: left; font-weight: 600; color: var(--muted); font-size: 13px; padding: 11px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.table td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.table tr:last-child td { border-bottom: 0; }
+.table tbody tr:hover td { background: var(--surface-2); }
+.table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.table .actions { text-align: right; white-space: nowrap; }
+.cell-title { font-weight: 600; }
+.cell-sub { color: var(--muted); font-size: 12.5px; }
+.row-link { cursor: pointer; }
+
+.empty { text-align: center; padding: 42px 20px; color: var(--muted); }
+.empty-ico { width: 54px; height: 54px; border-radius: 16px; margin: 0 auto 12px; display: grid; place-items: center; }
+.empty-ico [data-icon] { width: 26px; height: 26px; }
+.empty h3 { color: var(--text); font-size: 17px; margin-bottom: 4px; }
+
+/* Alerts */
+.alert { display: flex; gap: 12px; padding: 12px 14px; border-radius: 12px; align-items: flex-start; font-size: 14px; }
+.alert + .alert { margin-top: 8px; }
+.alert b { display: block; }
+.alert [data-icon] { margin-top: 2px; }
+.alert-list { display: flex; flex-direction: column; gap: 8px; }
+
+/* Charts */
+.donut-wrap { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+.donut { width: 170px; height: 170px; flex: none; }
+.legend { display: flex; flex-direction: column; gap: 7px; font-size: 13.5px; flex: 1; min-width: 180px; }
+.legend-row { display: flex; align-items: center; gap: 9px; }
+.legend-sw { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+.legend-row .v { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bars { display: flex; flex-direction: column; gap: 12px; }
+.bar-row { display: grid; grid-template-columns: minmax(110px, 200px) 1fr 70px; gap: 12px; align-items: center; font-size: 13.5px; }
+.bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { height: 12px; background: var(--neutral-soft); border-radius: 99px; overflow: hidden; display: flex; }
+.bar-fill { height: 100%; }
+.bar-val { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Steps / wizard */
+.steps { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.step { display: flex; align-items: center; gap: 9px; padding: 8px 14px 8px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-weight: 600; font-size: 14px; color: var(--muted); cursor: pointer; }
+.step b { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--neutral-soft); font-size: 13px; }
+.step.active { border-color: var(--primary); color: var(--primary); }
+.step.active b { background: var(--primary); color: #fff; }
+.step.done b { background: var(--success); color: #fff; }
+
+.link-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.db-link { display: flex; gap: 11px; align-items: center; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); text-decoration: none; color: var(--text); transition: border-color .15s, transform .15s; }
+.db-link:hover { border-color: var(--primary); transform: translateY(-1px); }
+.db-badge { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; font-size: 12px; flex: none; }
+.db-link .t { font-weight: 600; font-size: 14px; line-height: 1.3; }
+.db-link .h { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; }
+
+.verdict { border-radius: var(--radius); padding: 20px; display: flex; gap: 16px; align-items: center; }
+.verdict-ico { width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center; flex: none; background: rgba(255, 255, 255, .5); }
+.verdict-ico [data-icon] { width: 28px; height: 28px; }
+.verdict h3 { font-size: 19px; }
+.verdict p { margin: 2px 0 0; }
+
+.progress { height: 10px; border-radius: 99px; background: var(--neutral-soft); overflow: hidden; }
+.progress > div { height: 100%; border-radius: 99px; }
+
+.kv { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-weight: 500; word-break: break-word; }
+
+.profile-head { display: flex; gap: 16px; align-items: center; }
+.avatar { width: 56px; height: 56px; border-radius: 16px; background: var(--primary-soft); color: var(--primary); display: grid; place-items: center; font-weight: 700; font-size: 20px; flex: none; }
+.avatar.sm { width: 36px; height: 36px; border-radius: 10px; font-size: 14px; }
+.person-cell { display: flex; gap: 10px; align-items: center; }
+
+.result-list { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow: auto; }
+.result-item { display: flex; gap: 12px; padding: 11px 13px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-2); align-items: flex-start; }
+.result-item .meta { color: var(--muted); font-size: 12.5px; }
+.result-item .grow { flex: 1; min-width: 0; }
+
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.mt { margin-top: 16px; }
+.mb { margin-bottom: 16px; }
+.nowrap { white-space: nowrap; }
+.divider { height: 1px; background: var(--border); margin: 16px 0; }
+ul.clean { margin: 0; padding-left: 20px; }
+ul.clean li + li { margin-top: 4px; }
+.tag-list { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Modal */
+.modal { border: 0; padding: 0; border-radius: 18px; width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px); background: var(--surface); color: var(--text); box-shadow: 0 20px 60px rgba(0, 0, 0, .3); }
+.modal::backdrop { background: rgba(10, 16, 34, .55); backdrop-filter: blur(2px); }
+.modal-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 22px; border-bottom: 1px solid var(--border); }
+.modal-head h2 { font-size: 18px; }
+.modal-body { padding: 20px 22px; overflow: auto; max-height: calc(100vh - 210px); }
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid var(--border); background: var(--surface-2); }
+
+/* Toasts */
+.toasts { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 200; }
+.toast { background: var(--text); color: var(--bg); padding: 11px 16px; border-radius: 11px; box-shadow: var(--shadow); font-size: 14px; max-width: 360px; animation: toast-in .2s ease; }
+.toast.error { background: var(--danger); color: #fff; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+
+.spinner { width: 18px; height: 18px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.print-only { display: none; }
+
+/* ===== Responsive ===== */
+@media (max-width: 1100px) {
+  .grid.stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid.side { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { position: fixed; left: 0; top: 0; width: 270px; transform: translateX(-100%); transition: transform .2s ease; }
+  .sidebar.open { transform: none; }
+  .scrim { position: fixed; inset: 0; background: rgba(10, 16, 34, .5); z-index: 35; }
+  .only-mobile { display: grid; }
+  .topbar { padding: 10px 16px; }
+  .content { padding: 18px 16px 56px; }
+  .grid.two, .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .user-chip { padding: 3px; border-radius: 50%; }
+  .user-chip > div:last-child { display: none; }
+  .profile-head > div:last-child { min-width: 0; }
+  .profile-head h1 { overflow-wrap: anywhere; }
+  .toasts { left: 16px; right: 16px; }
+  .global-search input { width: 120px; }
+  .search-pop { width: min(320px, calc(100vw - 32px)); right: -48px; }
+  .bar-row { grid-template-columns: 1fr 60px; }
+  .bar-row .bar-label { grid-column: 1 / -1; }
+  .hero { padding: 20px; }
+}
+@media (max-width: 520px) {
+  .grid.stats { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { padding: 14px; }
+  .stat-num { font-size: 26px; }
+  .global-search { display: none; }
+  .kv { grid-template-columns: 1fr; }
+  .kv dt { margin-top: 6px; }
+}
+
+/* ===== Print (แบบรายงานผลการตรวจสอบ) ===== */
+@media print {
+  :root { --bg: #fff; --surface: #fff; --surface-2: #fff; --text: #000; --muted: #444; --border: #bbb; --shadow: none; color-scheme: light; }
+  body { font-size: 12.5px; background: #fff; }
+  .sidebar, .topbar, .no-print, .toasts, .steps { display: none !important; }
+  .layout { display: block; }
+  .content { padding: 0; max-width: none; }
+  .card { box-shadow: none; break-inside: avoid; }
+  .print-only { display: block; }
+  .grid.side { grid-template-columns: 1fr; }
+  a { color: #000; text-decoration: none; }
+  .chip { border: 1px solid #999; }
+}
+
+.brand-logo[data-icon] { width: 40px; height: 40px; padding: 9px; }
+
+/* Login */
+.login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px;
+  background: radial-gradient(circle at 15% 10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 40%),
+              radial-gradient(circle at 90% 90%, color-mix(in srgb, var(--primary) 25%, transparent), transparent 45%), var(--bg); }
+.login-card { width: min(420px, 100%); padding: 28px; position: relative; }
+.brand-login { padding: 0 0 22px; }
+.brand-login .brand-title { color: var(--text); font-size: 17px; }
+.brand-login .brand-sub { color: var(--muted); opacity: 1; }
+.login-error { background: var(--danger-soft); color: var(--danger); padding: 9px 12px; border-radius: 10px; font-size: 14px; }
+.login-hint { margin-top: 16px; font-size: 13px; color: var(--muted); background: var(--surface-2); border: 1px dashed var(--border); border-radius: 10px; padding: 10px 12px; }
+.login-hint:empty { display: none; }
+.login-hint code { font-weight: 600; color: var(--text); }
+.login-theme { position: absolute; top: 14px; right: 14px; }
+
+.user-chip { display: flex; align-items: center; gap: 9px; padding: 4px 12px 4px 4px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); max-width: 240px; }
+.user-chip .avatar { width: 32px; height: 32px; border-radius: 50%; font-size: 13px; }
+.user-chip .n { font-weight: 600; font-size: 13.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-chip .r { font-size: 11.5px; color: var(--muted); line-height: 1.2; }
+.nav .nav-sep { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .55; padding: 14px 12px 4px; }
+.nav a .count { margin-left: auto; background: var(--accent); color: #2a1500; font-size: 11.5px; font-weight: 700; border-radius: 99px; padding: 0 7px; min-width: 20px; text-align: center; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; overflow-x: auto; }
+.tabs button { background: none; border: 0; padding: 10px 14px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs button.active { color: var(--primary); border-bottom-color: var(--primary); }
+.score-big { font-size: 40px; font-weight: 700; line-height: 1; }
+.faq details { border: 1px solid var(--border); border-radius: 12px; padding: 0 16px; background: var(--surface); }
+.faq details + details { margin-top: 8px; }
+.faq summary { cursor: pointer; padding: 14px 0; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 10px; }
+.faq summary::after { content: '+'; color: var(--muted); font-size: 18px; line-height: 1; }
+.faq details[open] summary::after { content: '−'; }
+.faq details p { margin: 0 0 14px; color: var(--muted); }
+.manual h3 { font-size: 16px; margin: 18px 0 8px; }
+.manual ol { padding-left: 20px; margin: 0; }
+.manual ol li + li { margin-top: 4px; }
+.weight-pill { display: inline-block; min-width: 46px; text-align: center; font-weight: 700; border-radius: 8px; padding: 2px 8px; font-variant-numeric: tabular-nums; }
+.report-head { text-align: center; margin-bottom: 16px; }
+.report-head h2 { font-size: 18px; }
+.sign-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 40px; margin-top: 48px; text-align: center; }
+.sign-row div { border-top: 1px dotted var(--muted); padding-top: 6px; overflow-wrap: anywhere; min-width: 0; }
+@media (max-width: 520px) { .sign-row { grid-template-columns: 1fr; gap: 28px; } }
+
+.stack > *, .grid > * { min-width: 0; }
+
+</style>
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem('mugr.theme') || 'auto'; } catch (e) {}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">ข้ามไปยังเนื้อหา</a>
+
+  <!-- หน้าเข้าสู่ระบบ -->
+  <section class="login" id="loginView" hidden>
+    <div class="login-card card">
+      <div class="brand brand-login">
+        <div class="brand-logo" aria-hidden="true" data-icon="cap"></div>
+        <div>
+          <div class="brand-title">ระบบติดตามผลงานวิชาการ</div>
+          <div class="brand-sub">บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)</div>
+        </div>
+      </div>
+      <form id="loginForm" class="stack" autocomplete="on">
+        <label class="field"><span>ชื่อผู้ใช้</span><input name="username" required autocomplete="username"></label>
+        <label class="field"><span>รหัสผ่าน</span><input name="password" type="password" required autocomplete="current-password"></label>
+        <div class="login-error" id="loginError" role="alert" hidden></div>
+        <button class="btn primary" type="submit">เข้าสู่ระบบ</button>
+      </form>
+      <div class="login-hint" id="loginHint"></div>
+      <button class="icon-btn login-theme" data-action="toggle-theme" aria-label="สลับโหมดมืด/สว่าง"><span data-icon="sun"></span></button>
+    </div>
+  </section>
+
+  <div class="layout" id="appView" hidden>
+    <aside class="sidebar" id="sidebar" aria-label="เมนูหลัก">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true" data-icon="cap"></div>
+        <div>
+          <div class="brand-title">ระบบติดตามผลงานวิชาการ</div>
+          <div class="brand-sub">บัณฑิตวิทยาลัย · มหิดล (MUGR)</div>
+        </div>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-foot">
+        <div class="sync-state" id="syncState">บันทึกในเครื่องนี้</div>
+      </div>
+    </aside>
+
+    <div class="main-wrap">
+      <header class="topbar">
+        <button class="icon-btn only-mobile" id="menuBtn" aria-label="เปิดเมนู"><span data-icon="menu"></span></button>
+        <div class="topbar-title" id="pageTitle"></div>
+        <div class="topbar-actions">
+          <label class="global-search">
+            <span data-icon="search"></span>
+            <input id="globalSearch" type="search" placeholder="ค้นหาอาจารย์ / ผลงาน…" autocomplete="off" aria-label="ค้นหา">
+            <div class="search-pop" id="searchPop" hidden></div>
+          </label>
+          <button class="icon-btn" data-action="toggle-theme" aria-label="สลับโหมดมืด/สว่าง" title="สลับโหมดมืด/สว่าง"><span data-icon="sun"></span></button>
+          <div class="user-chip" id="userChip"></div>
+          <button class="icon-btn" data-action="logout" aria-label="ออกจากระบบ" title="ออกจากระบบ"><span data-icon="logout"></span></button>
+        </div>
+      </header>
+      <main id="main" class="content" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <div class="scrim" id="scrim" hidden></div>
+  <dialog id="modal" class="modal"></dialog>
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+  <script>
+/*
+ * เกณฑ์และข้อมูลอ้างอิงของระบบ
+ * - ประกาศ ก.พ.อ. เรื่อง หลักเกณฑ์การพิจารณาวารสารทางวิชาการสำหรับการเผยแพร่ผลงานทางวิชาการ พ.ศ. 2562
+ * - ค่าน้ำหนักผลงานวิชาการตามคู่มือการประกันคุณภาพการศึกษาภายใน ระดับหลักสูตร (สป.อว./สกอ.)
+ * ค่าทั้งหมดเป็น "ค่าเริ่มต้น" ผู้ดูแลระบบปรับได้ที่หน้า จัดการระบบ > ตั้งค่าเกณฑ์
+ */
+window.CRITERIA = (function () {
+  // ประเภทแหล่งเผยแพร่ (category)
+  // kpa: ระดับวารสารตามประกาศ ก.พ.อ. 2562 — intl = นานาชาติ, nat = ชาติ, '' = ไม่ใช่วารสารตามประกาศ
+  // journal: เป็นบทความในวารสาร (ใช้แสดงช่องชื่อวารสาร/ISSN/Quartile)
+  const CATEGORIES = [
+    { id: 'scopus',     label: 'วารสารในฐาน Scopus',                        short: 'Scopus',     kpa: 'intl', journal: true, quartile: true, weight: 1.0, color: '#2f6fd6' },
+    { id: 'wos',        label: 'วารสารในฐาน Web of Science (SCIE/SSCI/AHCI)', short: 'WoS',        kpa: 'intl', journal: true, quartile: true, weight: 1.0, color: '#7b5cd6' },
+    { id: 'intl_kpa',   label: 'วารสารนานาชาติในฐาน ก.พ.อ. อื่น (ERIC, PubMed, MathSciNet, JSTOR, Project MUSE)', short: 'นานาชาติ (ก.พ.อ.)', kpa: 'intl', journal: true, weight: 1.0, color: '#1b9aaa' },
+    { id: 'intl_other', label: 'วารสารนานาชาตินอกฐาน ก.พ.อ. (สภาสถาบันอนุมัติ)', short: 'นานาชาติอื่น', kpa: '', journal: true, weight: 0.8, color: '#5aa6c9' },
+    { id: 'tci1',       label: 'วารสารในฐาน TCI กลุ่มที่ 1',                 short: 'TCI 1',      kpa: 'nat', journal: true, weight: 0.8, color: '#1f9d63' },
+    { id: 'tci2',       label: 'วารสารในฐาน TCI กลุ่มที่ 2',                 short: 'TCI 2',      kpa: 'nat', journal: true, weight: 0.6, color: '#7cc04b' },
+    { id: 'nat_other',  label: 'วารสารระดับชาตินอกฐาน TCI (สภาสถาบันอนุมัติ)', short: 'วารสารชาติอื่น', kpa: '', journal: true, weight: 0.4, color: '#b7c95a' },
+    { id: 'proc_intl',  label: 'Proceedings ระดับนานาชาติ (ฉบับสมบูรณ์)',     short: 'Proc. นานาชาติ', kpa: '', weight: 0.4, color: '#d98a1c' },
+    { id: 'proc_nat',   label: 'Proceedings ระดับชาติ (ฉบับสมบูรณ์)',         short: 'Proc. ชาติ',  kpa: '', weight: 0.2, color: '#e9b44c' },
+    { id: 'book',       label: 'ตำรา / หนังสือ ที่ผ่านการประเมินตำแหน่งทางวิชาการ', short: 'ตำรา/หนังสือ', kpa: '', weight: 1.0, color: '#c0567b' },
+    { id: 'patent',     label: 'สิทธิบัตร',                                    short: 'สิทธิบัตร',   kpa: '', weight: 1.0, color: '#8b5a3c' },
+    { id: 'petty',      label: 'อนุสิทธิบัตร',                                 short: 'อนุสิทธิบัตร', kpa: '', weight: 0.4, color: '#b98a6a' },
+    { id: 'social',     label: 'ผลงานวิชาการรับใช้สังคม (ผ่านการประเมินตำแหน่ง)', short: 'รับใช้สังคม', kpa: '', weight: 1.0, color: '#6c7a96' },
+    { id: 'tci3',       label: 'วารสาร TCI กลุ่มที่ 3 (ไม่เข้าเกณฑ์)',          short: 'TCI 3',      kpa: '', journal: true, weight: 0, color: '#a0a7b8' },
+    { id: 'none',       label: 'ไม่อยู่ในฐานข้อมูลที่กำหนด (ไม่เข้าเกณฑ์)',      short: 'ไม่อยู่ในฐาน', kpa: '', journal: true, weight: 0, color: '#c4c9d4' },
+  ];
+
+  const QUARTILES = ['Q1', 'Q2', 'Q3', 'Q4'];
+
+  const WORK_TYPES = [
+    { id: 'research', label: 'บทความวิจัย', research: true },
+    { id: 'academic', label: 'บทความวิชาการ' },
+    { id: 'proceeding', label: 'บทความวิจัยในรายงานการประชุม', research: true },
+    { id: 'book', label: 'ตำรา / หนังสือ' },
+    { id: 'patent', label: 'สิทธิบัตร / อนุสิทธิบัตร' },
+    { id: 'other', label: 'ผลงานอื่น ๆ' },
+  ];
+
+  const AUTHOR_ROLES = [
+    { id: 'first', label: 'ผู้แต่งหลัก' },
+    { id: 'corresponding', label: 'ผู้ประพันธ์บรรณกิจ' },
+    { id: 'co', label: 'ผู้แต่งร่วม' },
+  ];
+
+  const STATUSES = {
+    pending:  { label: 'รอตรวจสอบ', tone: 'warning' },
+    verified: { label: 'รับรองแล้ว', tone: 'success' },
+    rejected: { label: 'ส่งกลับแก้ไข', tone: 'danger' },
+  };
+
+  const LEVELS = {
+    bachelor: { label: 'ปริญญาตรี', target: 20 },
+    master:   { label: 'ปริญญาโท',  target: 40 },
+    phd:      { label: 'ปริญญาเอก', target: 60 },
+  };
+
+  // ประเภทอาจารย์ในหลักสูตร
+  const LECTURER_TYPES = [
+    { id: 'responsible', label: 'อาจารย์ผู้รับผิดชอบหลักสูตร' },
+    { id: 'program',     label: 'อาจารย์ประจำหลักสูตร' },
+    { id: 'regular',     label: 'อาจารย์ประจำ' },
+    { id: 'adjunct',     label: 'อาจารย์พิเศษ' },
+  ];
+
+  const ACADEMIC_POSITIONS = ['', 'ผู้ช่วยศาสตราจารย์', 'รองศาสตราจารย์', 'ศาสตราจารย์'];
+
+  // สิทธิ์ของผู้ใช้แต่ละบทบาท
+  const USER_ROLES = {
+    admin:     { label: 'ผู้ดูแลระบบ (Admin)', tone: 'accent' },
+    chair:     { label: 'ประธานหลักสูตร',     tone: 'primary' },
+    lecturer:  { label: 'อาจารย์',            tone: 'info' },
+    executive: { label: 'ผู้บริหาร',          tone: 'violet' },
+  };
+
+  const PERMISSIONS = [
+    // [สิทธิ์, admin, chair, lecturer, executive]
+    ['ดูแดชบอร์ดและการแจ้งเตือน',            'ทั้งบัณฑิตวิทยาลัย', 'หลักสูตรตนเอง', 'ของตนเอง', 'ทั้งบัณฑิตวิทยาลัย'],
+    ['เพิ่ม / แก้ไข / ลบ ผลงานวิชาการ',        '✓', 'หลักสูตรตนเอง', 'ของตนเอง (ก่อนรับรอง)', '—'],
+    ['ตรวจรับรองผลงาน (Verification)',      '✓', 'หลักสูตรตนเอง', '—', '—'],
+    ['จัดการข้อมูลอาจารย์',                  '✓', 'หลักสูตรตนเอง', 'แก้ไขโปรไฟล์ตนเอง', '—'],
+    ['ตรวจคุณสมบัติผู้ทรงคุณวุฒิภายนอก',      '✓', '✓', '—', 'ดูอย่างเดียว'],
+    ['จัดการหลักสูตร',                       '✓', '—', '—', '—'],
+    ['ประเมินหลักสูตรและออกรายงาน PDF',      '✓', 'หลักสูตรตนเอง', 'รายงานตนเอง', 'ทั้งบัณฑิตวิทยาลัย'],
+    ['จัดการผู้ใช้ / ตั้งค่าเกณฑ์ / สำรองข้อมูล', '✓', '—', '—', '—'],
+  ];
+
+  // เกณฑ์คุณสมบัติด้านผลงานของอาจารย์ (ค่าเริ่มต้นตามเกณฑ์มาตรฐานหลักสูตร — ปรับได้)
+  const DEFAULT_REQUIREMENTS = {
+    bachelor: { minWorks: 1, minResearch: 0 },
+    master:   { minWorks: 3, minResearch: 1 },
+    phd:      { minWorks: 3, minResearch: 1 },
+    adjunct:  { minWorks: 1, minResearch: 0, kpaOnly: true },
+  };
+
+  // คุณสมบัติผู้ทรงคุณวุฒิภายนอก (กรรมการสอบวิทยานิพนธ์) ตามเกณฑ์มาตรฐานหลักสูตรระดับบัณฑิตศึกษา
+  // นับผลงานตลอดช่วงชีวิตการทำงาน (ไม่จำกัด 5 ปี) · "ฐานข้อมูลที่ยอมรับ" อ้างอิงประกาศ ก.พ.อ. พ.ศ. 2562
+  // rule: research = มีประสบการณ์ทำวิจัย, intl = จำนวนผลงานระดับนานาชาติ, natOrIntl = ระดับชาติ X หรือนานาชาติ Y, accepted = ผลงานในฐานที่ยอมรับ (ชาติ+นานาชาติ)
+  const EXTERNAL_STANDARDS = {
+    '2548': {
+      label: 'เกณฑ์ 2548',
+      degree: 'ปริญญาเอกหรือเทียบเท่า หรือปริญญาโทและดำรงตำแหน่งไม่ต่ำกว่ารองศาสตราจารย์',
+      phd:    { rule: 'research', text: 'มีประสบการณ์ทำวิจัยที่ไม่ใช่ส่วนหนึ่งของการศึกษาเพื่อรับปริญญา' },
+      master: { rule: 'research', text: 'มีประสบการณ์ทำวิจัยที่ไม่ใช่ส่วนหนึ่งของการศึกษาเพื่อรับปริญญา' },
+    },
+    '2558': {
+      label: 'เกณฑ์ 2558',
+      degree: 'ปริญญาเอกหรือเทียบเท่า',
+      phd:    { rule: 'intl', intl: 5, text: 'ผลงานตีพิมพ์ระดับนานาชาติ 5 รายการ' },
+      master: { rule: 'natOrIntl', nat: 10, intl: 5, text: 'ผลงานตีพิมพ์ระดับชาติ 10 รายการ หรือระดับนานาชาติ 5 รายการ' },
+    },
+    '2565': {
+      label: 'เกณฑ์ 2565',
+      degree: 'ปริญญาเอกหรือเทียบเท่า',
+      phd:    { rule: 'accepted', min: 10, text: 'ผลงานตีพิมพ์ในฐานข้อมูลที่ยอมรับ 10 รายการ (อ้างอิงประกาศ ก.พ.อ. พ.ศ. 2562)' },
+      master: { rule: 'accepted', min: 5, text: 'ผลงานตีพิมพ์ในฐานข้อมูลที่ยอมรับ 5 รายการ (อ้างอิงประกาศ ก.พ.อ. พ.ศ. 2562)' },
+    },
+  };
+
+  const EXTERNAL_ROLES = ['กรรมการสอบวิทยานิพนธ์', 'กรรมการสอบเค้าโครงวิทยานิพนธ์', 'อาจารย์ที่ปรึกษาวิทยานิพนธ์ร่วม', 'อาจารย์พิเศษ', 'ผู้ทรงคุณวุฒิตรวจเครื่องมือวิจัย'];
+
+  // ลิงก์ค้นหาชื่อในฐานข้อมูล — ผู้ตรวจเปิดตรวจสอบและยืนยันด้วยตนเอง
+  function splitName(full) {
+    const parts = String(full || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length < 2) return { first: parts[0] || '', last: parts[0] || '' };
+    return { first: parts.slice(0, -1).join(' '), last: parts[parts.length - 1] };
+  }
+
+  function searchLinks(p) {
+    const en = (p.nameEn || '').trim();
+    const th = (p.nameTh || '').trim();
+    const e = encodeURIComponent;
+    const { first, last } = splitName(en);
+    const out = [];
+    if (p.scopusId) out.push({ k: 'SC', label: 'Scopus Author Profile', hint: 'ID ' + p.scopusId, url: 'https://www.scopus.com/authid/detail.uri?authorId=' + e(p.scopusId) });
+    if (en) out.push({ k: 'SC', label: 'Scopus — ค้นหาผู้แต่ง', hint: last + ', ' + first, url: 'https://www.scopus.com/results/authorNamesList.uri?origin=searchauthorlookup&src=al&st1=' + e(last) + '&st2=' + e(first) });
+    if (th) out.push({ k: 'TJ', label: 'ThaiJO (TCI) — ชื่อไทย', hint: th, url: 'https://www.tci-thaijo.org/index.php/index/search/search?query=' + e(th) });
+    if (en) out.push({ k: 'TJ', label: 'ThaiJO (TCI) — ชื่ออังกฤษ', hint: en, url: 'https://www.tci-thaijo.org/index.php/index/search/search?query=' + e(en) });
+    out.push({ k: 'TC', label: 'TCI — ตรวจกลุ่มวารสาร', hint: 'tci-thailand.org', url: 'https://tci-thailand.org/' });
+    out.push({ k: 'WS', label: 'Web of Science', hint: 'ต้องใช้เครือข่ายสถาบัน', url: 'https://www.webofscience.com/wos/author/search' });
+    if (en) out.push({ k: 'PM', label: 'PubMed', hint: en, url: 'https://pubmed.ncbi.nlm.nih.gov/?term=' + e(en + '[Author]') });
+    if (en) out.push({ k: 'ER', label: 'ERIC', hint: en, url: 'https://eric.ed.gov/?q=' + e('author:"' + en + '"') });
+    out.push({ k: 'GS', label: 'Google Scholar', hint: en || th, url: 'https://scholar.google.com/scholar?q=' + e('author:"' + (en || th) + '"') });
+    if (p.orcid) out.push({ k: 'OR', label: 'ORCID', hint: p.orcid, url: 'https://orcid.org/' + e(p.orcid) });
+    return out;
+  }
+
+  function workLinks(w) {
+    const e = encodeURIComponent;
+    const out = [];
+    const key = w.issn || w.journal;
+    if (key) out.push({ label: 'SJR / Quartile', url: 'https://www.scimagojr.com/journalsearch.php?q=' + e(key) });
+    if (w.journal) out.push({ label: 'ThaiJO', url: 'https://www.tci-thaijo.org/index.php/index/search/search?query=' + e(w.journal) });
+    if (w.title) out.push({ label: 'Google Scholar', url: 'https://scholar.google.com/scholar?q=' + e('"' + w.title + '"') });
+    if (w.doi) out.push({ label: 'DOI', url: 'https://doi.org/' + String(w.doi).replace(/^https?:\/\/(dx\.)?doi\.org\//, '') });
+    if (w.url) out.push({ label: 'หลักฐาน', url: w.url });
+    return out;
+  }
+
+  const KPA_2562 = {
+    title: 'ประกาศ ก.พ.อ. เรื่อง หลักเกณฑ์การพิจารณาวารสารทางวิชาการสำหรับการเผยแพร่ผลงานทางวิชาการ พ.ศ. 2562',
+    source: 'https://www.ratchakitcha.soc.go.th/DATA/PDF/2562/E/151/T_0013.PDF',
+    national: [
+      'เป็นวารสารที่อยู่ในฐานข้อมูล Thai-Journal Citation Index (TCI) กลุ่มที่ 1 หรือกลุ่มที่ 2',
+      'มีกองบรรณาธิการจากหลากหลายสถาบัน และบทความผ่านการพิจารณาจากผู้ทรงคุณวุฒิ (Peer review) ก่อนตีพิมพ์',
+      'ออกเผยแพร่สม่ำเสมอตรงตามกำหนดเวลา',
+    ],
+    international: ['ERIC', 'MathSciNet', 'PubMed', 'Scopus', 'Web of Science (เฉพาะ SCIE, SSCI, AHCI)', 'JSTOR', 'Project MUSE'],
+    notes: [
+      'วารสารที่มีลักษณะเป็นวารสารล่าเหยื่อ (Predatory journal) ไม่ถือเป็นวารสารทางวิชาการตามประกาศ',
+      'ตรวจสถานะวารสาร ณ ปีที่ผลงานตีพิมพ์ (วารสารต้องอยู่ในฐานข้อมูลในปีนั้น)',
+      'วารสาร TCI กลุ่มที่ 3 ไม่เข้าเกณฑ์วารสารทางวิชาการตามประกาศนี้',
+    ],
+  };
+
+  const FAQ = [
+    ['ผลงานไม่ถูกนำมาคิดคะแนน เกิดจากอะไร?',
+      'ตรวจ 4 จุด: (1) สถานะต้องเป็น "รับรองแล้ว" — ผลงานรอตรวจ/ส่งกลับแก้ไขจะไม่นับ (2) ปีที่ตีพิมพ์ต้องอยู่ในช่วง 5 ปีย้อนหลังจากปีประเมิน (ดูปีประเมินที่ จัดการระบบ > ตั้งค่าเกณฑ์) (3) ประเภทแหล่งเผยแพร่ต้องมีค่าน้ำหนักมากกว่า 0 — TCI กลุ่ม 3 และวารสารนอกฐานจะได้ 0 (4) อาจารย์ต้องผูกกับหลักสูตรและเป็น "อาจารย์ผู้รับผิดชอบหลักสูตร" จึงนับในตัวบ่งชี้ระดับหลักสูตร'],
+    ['ตรวจคุณสมบัติบุคคลภายนอก (ผู้ทรงคุณวุฒิภายนอก) อย่างไร?',
+      'เมนู ตรวจคุณสมบัติบุคคลภายนอก > เพิ่มรายชื่อ ระบุวุฒิ ตำแหน่งทางวิชาการ ระดับการสอบ (ป.โท/ป.เอก) และเกณฑ์ที่หลักสูตรใช้ (2548/2558/2565) → กดลิงก์ค้นชื่อใน Scopus / ThaiJO / WoS → บันทึกผลงานที่พบและติ๊ก "ยืนยันแล้ว" → ระบบสรุปผลผ่าน/ไม่ผ่านทั้ง 3 เกณฑ์พร้อมกัน และพิมพ์แบบตรวจสอบเป็น PDF ได้'],
+    ['ผลงานของบุคคลภายนอกนับย้อนหลังกี่ปี?',
+      'เกณฑ์ผู้ทรงคุณวุฒิภายนอกนับผลงานทั้งหมดที่เคยตีพิมพ์ (ไม่จำกัด 5 ปี) แต่วารสารต้องอยู่ในฐานข้อมูลที่ยอมรับตามประกาศ ก.พ.อ. 2562 ในปีที่ตีพิมพ์ — ผลงานใน TCI กลุ่ม 3 หรือนอกฐานจะไม่ถูกนับ'],
+    ['ปีที่ตีพิมพ์ ควรกรอกเป็น พ.ศ. หรือ ค.ศ.?',
+      'กรอกได้ทั้งสองแบบ ระบบจะแปลง ค.ศ. (เช่น 2024) เป็น พ.ศ. (2567) ให้อัตโนมัติ'],
+    ['จะสร้างข้อมูลเริ่มต้นอย่างไร?',
+      'เข้าสู่ระบบด้วยบัญชี Admin แล้วไปที่ จัดการระบบ > ข้อมูล กด "โหลดข้อมูลตัวอย่าง" เพื่อทดลองระบบ หรือเริ่มจาก (1) เพิ่มหลักสูตร (2) เพิ่มอาจารย์และกำหนดหลักสูตร (3) สร้างบัญชีผู้ใช้ให้ประธานหลักสูตรและอาจารย์ (4) บันทึกผลงาน'],
+    ['ผลงานใกล้หมดอายุ 5 ปี หมายถึงอะไร?',
+      'ผลงานที่ตีพิมพ์ในปีแรกของช่วง 5 ปี (เช่น ปีประเมิน 2569 → ผลงานปี 2565) จะไม่ถูกนับในปีประเมินถัดไป ระบบจึงแจ้งเตือนล่วงหน้าเพื่อให้อาจารย์วางแผนเผยแพร่ผลงานใหม่'],
+    ['ตรวจสอบว่าวารสารอยู่ในฐานใดอย่างไร?',
+      'ในหน้าตรวจรับรองผลงาน กดลิงก์ SJR (ดู Quartile ของ Scopus), ThaiJO/TCI (ดูกลุ่มวารสาร) หรือเปิดโปรไฟล์อาจารย์แล้วใช้ "ค้นหาชื่อในฐานข้อมูล" เพื่อค้น Scopus, TCI, WoS, PubMed, ERIC และ Google Scholar'],
+    ['ข้อมูลเก็บไว้ที่ไหน?',
+      'โหมดเริ่มต้นเก็บในเบราว์เซอร์ของเครื่องนี้ (ควรสำรองข้อมูลเป็นไฟล์ JSON สม่ำเสมอ) หากต้องการใช้งานหลายคนพร้อมกัน ให้ติดตั้งตัวเชื่อม Google Sheets (โฟลเดอร์ apps-script) แล้วใส่ URL ที่ จัดการระบบ > การเชื่อมต่อ'],
+    ['ลืมรหัสผ่าน Admin?',
+      'โหมดเก็บในเครื่อง: เปิด DevTools > Application > Local Storage แล้วลบคีย์ mugr.data เพื่อรีเซ็ต (ข้อมูลจะหาย ควรมีไฟล์สำรอง) · โหมด Google Sheets: แก้รหัสผ่านในชีต Users ได้โดยตรง'],
+  ];
+
+  return { CATEGORIES, QUARTILES, WORK_TYPES, AUTHOR_ROLES, STATUSES, LEVELS, LECTURER_TYPES, ACADEMIC_POSITIONS,
+    USER_ROLES, PERMISSIONS, DEFAULT_REQUIREMENTS, EXTERNAL_STANDARDS, EXTERNAL_ROLES, KPA_2562, FAQ, searchLinks, workLinks };
+})();
+
+</script>
+  <script>
 /* ระบบติดตามผลงานวิชาการ บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)
  * Single-page app (vanilla JS). เก็บข้อมูลใน localStorage หรือเชื่อมต่อ Google Sheets ผ่าน Apps Script (apps-script/Code.gs)
  */
@@ -1815,3 +2504,7 @@
   window.addEventListener('storage', (e) => { if (e.key === KEY && !S.remote && S.user) { S.data = loadLocal(); render(); } });
   boot();
 })();
+
+</script>
+</body>
+</html>

@@ -124,15 +124,24 @@ python3 -m http.server 8000
 
 ---
 
-## เชื่อมต่อ Google Sheets (ใช้งานหลายคนพร้อมกัน)
-1. สร้าง Google Sheet แล้วเปิด ส่วนขยาย > Apps Script จากนั้นวางโค้ดจาก [`apps-script/Code.gs`](apps-script/Code.gs)
-2. รันฟังก์ชัน `setup` หนึ่งครั้ง เพื่อสร้างชีต Programs, Lecturers, Works, Users, Externals, Settings และบัญชี `admin` / `admin1234`
-3. Deploy เป็น Web app โดยตั้ง Execute as: **Me** และ Who has access: **Anyone**
-4. นำ URL ไปใส่ที่ **จัดการระบบ > การเชื่อมต่อ** แล้วเข้าสู่ระบบใหม่
-5. ถ้าต้องการย้ายข้อมูลเดิมขึ้น Sheets ให้สำรองเป็น JSON ก่อนเชื่อมต่อ แล้วกด "ส่งข้อมูลจากไฟล์สำรองขึ้น Sheets"
+## ติดตั้งบน Google Sheets + Apps Script (แนะนำ — ใช้งานหลายคนพร้อมกัน)
+เปิดระบบจาก URL ของ Apps Script ได้เลย ไม่ต้องใช้ GitHub Pages
+1. เปิด Google Sheet ที่จะใช้เก็บข้อมูล แล้วไปที่ **ส่วนขยาย > Apps Script**
+2. ในไฟล์ `Code.gs` ลบโค้ดเดิมให้หมด แล้ววางโค้ดจาก [`apps-script/Code.gs`](apps-script/Code.gs) (248+ บรรทัด)
+3. กด **+ > HTML** ตั้งชื่อว่า `index` (ไม่ต้องพิมพ์ .html) ลบเนื้อหาเดิมทิ้ง แล้ววางเนื้อหาจาก [`apps-script/index.html`](apps-script/index.html) (ไฟล์เดียวที่รวมหน้าเว็บทั้งหมด)
+4. บันทึก เลือกฟังก์ชัน `setup` แล้วกด **Run** หนึ่งครั้ง จากนั้นอนุญาตสิทธิ์ ระบบจะสร้างชีต Programs, Lecturers, Works, Users, Externals, Settings และบัญชี `admin` / `admin1234`
+5. **Deploy > New deployment > Web app** ตั้ง Execute as: **Me** และ Who has access: **Anyone** (หรือ "Anyone within mahidol.ac.th" ถ้าต้องการให้เข้าได้เฉพาะคนในองค์กร)
+6. เปิด URL ที่ลงท้ายด้วย `/exec` แล้วเข้าสู่ระบบด้วย `admin` จากนั้น **เปลี่ยนรหัสผ่านทันที**
+7. ถ้าต้องการข้อมูลทดลอง ไปที่ จัดการระบบ > ข้อมูล > โหลดข้อมูลตัวอย่าง (ข้อมูลในชีตจะถูกแทนที่)
 
-เซิร์ฟเวอร์ตรวจสิทธิ์ซ้ำทุกคำขอ เช่น อาจารย์รับรองผลงานของตนเองไม่ได้ และประธานหลักสูตรแก้ได้เฉพาะหลักสูตรของตน
-รหัสผ่านเก็บเป็น SHA-256 hash
+ทุกครั้งที่แก้โค้ด ให้ไปที่ **Deploy > Manage deployments > ✏ > Version: New version > Deploy** แล้ว URL จะยังเป็นอันเดิม
+
+ไม่จำเป็นต้องแชร์ชีตเป็นแบบ "ทุกคนที่มีลิงก์" เพราะเว็บแอปทำงานด้วยสิทธิ์ของเจ้าของ ควรตั้งการแชร์ชีตเป็น **จำกัด**
+เซิร์ฟเวอร์ตรวจสิทธิ์ซ้ำทุกคำขอ เช่น อาจารย์รับรองผลงานของตนเองไม่ได้ และประธานหลักสูตรแก้ได้เฉพาะหลักสูตรของตน รหัสผ่านเก็บเป็น SHA-256 hash
+
+ถ้าโฮสต์หน้าเว็บแยกไว้ที่ GitHub Pages ก็ยังใช้ได้ ให้นำ URL `/exec` ไปใส่ที่ **จัดการระบบ > การเชื่อมต่อ**
+
+> นักพัฒนา: เมื่อแก้ `index.html` หรือไฟล์ใน `assets/` ให้รัน `python3 tools/build_gas.py` เพื่อสร้าง `apps-script/index.html` ใหม่
 
 ## โครงสร้างไฟล์
 ```
@@ -140,7 +149,9 @@ index.html            หน้าเว็บหลัก
 assets/styles.css     ธีม (สว่าง/มืด) และ layout responsive + รูปแบบการพิมพ์
 assets/criteria.js    เกณฑ์ ก.พ.อ. 2562, ค่าน้ำหนัก, เกณฑ์ผู้ทรงคุณวุฒิภายนอก, FAQ, ลิงก์ฐานข้อมูล
 assets/app.js         ตรรกะของระบบทั้งหมด
-apps-script/Code.gs   ตัวเชื่อม Google Sheets (ไม่บังคับ)
+apps-script/Code.gs   ฝั่งเซิร์ฟเวอร์ Apps Script + Google Sheets
+apps-script/index.html หน้าเว็บรวมไฟล์เดียวสำหรับ Apps Script (สร้างจาก tools/build_gas.py)
+tools/build_gas.py    สคริปต์รวมไฟล์
 ```
 
 > สรุปเกณฑ์ในระบบจัดทำขึ้นเพื่อช่วยการตรวจสอบเท่านั้น ให้ยึดประกาศฉบับเต็มของ ก.พ.อ. และมหาวิทยาลัยเป็นหลัก

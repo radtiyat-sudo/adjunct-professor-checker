@@ -3,11 +3,11 @@
  * ตัวเชื่อมฐานข้อมูล Google Sheets (Apps Script Web App)
  *
  * วิธีติดตั้ง
- * 1) สร้าง Google Sheet ใหม่ > ส่วนขยาย > Apps Script > วางโค้ดนี้แทนที่ Code.gs
- * 2) เลือกฟังก์ชัน setup แล้วกด Run หนึ่งครั้ง (อนุญาตสิทธิ์) — จะสร้างชีตและบัญชี admin / admin1234
- * 3) Deploy > New deployment > Web app · Execute as: Me · Who has access: Anyone
- * 4) คัดลอก URL (.../exec) ไปใส่ในระบบที่ จัดการระบบ > การเชื่อมต่อ
- * 5) เข้าสู่ระบบด้วย admin แล้วเปลี่ยนรหัสผ่านทันที
+ * 1) เปิด Google Sheet > ส่วนขยาย > Apps Script > วางโค้ดนี้ในไฟล์ Code.gs
+ * 2) กด + > HTML ตั้งชื่อ index แล้ววางเนื้อหาไฟล์ apps-script/index.html (ไฟล์รวมหน้าเว็บทั้งหมด)
+ * 3) เลือกฟังก์ชัน setup แล้วกด Run หนึ่งครั้ง (อนุญาตสิทธิ์) — จะสร้างชีตและบัญชี admin / admin1234
+ * 4) Deploy > New deployment > Web app · Execute as: Me · Who has access: Anyone (หรือเฉพาะในองค์กร)
+ * 5) เปิด URL (.../exec) จะเห็นหน้าเข้าสู่ระบบ — เข้าด้วย admin แล้วเปลี่ยนรหัสผ่านทันที
  *
  * สิทธิ์การเข้าถึงข้อมูลถูกตรวจซ้ำที่ฝั่งเซิร์ฟเวอร์นี้ (ไม่เชื่อข้อมูลจากเบราว์เซอร์)
  */
@@ -41,27 +41,40 @@ function setup() {
 }
 
 // ---------------- HTTP ----------------
-function doGet() {
-  return json({ ok: true, service: 'mugr-academic-tracker', time: new Date().toISOString() });
+// เปิดหน้าเว็บของระบบ (ไฟล์ index.html ในโปรเจกต์ Apps Script) — ?ping=1 ใช้ทดสอบว่าเว็บแอปทำงาน
+function doGet(e) {
+  if (e && e.parameter && e.parameter.ping) return json({ ok: true, service: 'mugr-academic-tracker', time: new Date().toISOString() });
+  return HtmlService.createHtmlOutputFromFile('index')
+    .setTitle('ระบบติดตามผลงานวิชาการ | บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
+// เรียกจากหน้าเว็บที่เปิดผ่าน Apps Script (google.script.run.api)
+function api(body) {
+  return handle(JSON.parse(body || '{}'));
+}
+
+// เรียกจากหน้าเว็บที่โฮสต์ภายนอก เช่น GitHub Pages (fetch POST)
 function doPost(e) {
+  return json(handle(JSON.parse((e && e.postData && e.postData.contents) || '{}')));
+}
+
+function handle(req) {
   var lock = LockService.getScriptLock();
   try {
-    var req = JSON.parse(e.postData.contents || '{}');
-    if (req.action === 'login') return json(login(req));
+    if (req.action === 'login') return login(req);
     var user = auth(req.token);
     lock.waitLock(20000);
     switch (req.action) {
-      case 'load': return json({ ok: true, user: publicUser(user), data: loadData(user) });
-      case 'upsert': return json({ ok: true, record: upsert(user, req.entity, req.record) });
-      case 'remove': removeRecord(user, req.entity, req.id); return json({ ok: true });
-      case 'replaceAll': replaceAll(user, req.data); return json({ ok: true });
-      case 'logout': CacheService.getScriptCache().remove('t_' + req.token); return json({ ok: true });
+      case 'load': return { ok: true, user: publicUser(user), data: loadData(user) };
+      case 'upsert': return { ok: true, record: upsert(user, req.entity, req.record) };
+      case 'remove': removeRecord(user, req.entity, req.id); return { ok: true };
+      case 'replaceAll': replaceAll(user, req.data); return { ok: true };
+      case 'logout': CacheService.getScriptCache().remove('t_' + req.token); return { ok: true };
       default: throw new Error('ไม่รู้จักคำสั่ง ' + req.action);
     }
   } catch (err) {
-    return json({ ok: false, error: String(err && err.message || err) });
+    return { ok: false, error: String(err && err.message || err) };
   } finally {
     try { lock.releaseLock(); } catch (x) {}
   }
