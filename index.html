@@ -26,11 +26,29 @@
           <div class="brand-sub">บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)</div>
         </div>
       </div>
+      <div class="login-tabs" role="tablist">
+        <button type="button" role="tab" class="active" data-auth-tab="login" aria-selected="true">เข้าสู่ระบบ</button>
+        <button type="button" role="tab" data-auth-tab="register" aria-selected="false">สมัครใช้งานด้วยอีเมล</button>
+      </div>
       <form id="loginForm" class="stack" autocomplete="on">
-        <label class="field"><span>ชื่อผู้ใช้</span><input name="username" required autocomplete="username"></label>
+        <label class="field"><span>อีเมล หรือชื่อผู้ใช้</span><input name="username" required autocomplete="username"></label>
         <label class="field"><span>รหัสผ่าน</span><input name="password" type="password" required autocomplete="current-password"></label>
         <div class="login-error" id="loginError" role="alert" hidden></div>
+        <div class="login-ok" id="loginOk" role="status" hidden></div>
         <button class="btn primary" type="submit">เข้าสู่ระบบ</button>
+      </form>
+      <form id="registerForm" class="stack" autocomplete="on" hidden novalidate>
+        <label class="field"><span>อีเมล <em>*</em></span><input name="email" type="email" required autocomplete="email" placeholder="name@mahidol.ac.th"></label>
+        <label class="field"><span>ชื่อ - นามสกุล <em>*</em></span><input name="displayName" required autocomplete="name"></label>
+        <label class="field"><span>รหัสผ่าน (อย่างน้อย 8 ตัว) <em>*</em></span><input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+        <label class="field"><span>ยืนยันรหัสผ่าน <em>*</em></span><input name="password2" type="password" required minlength="8" autocomplete="new-password"></label>
+        <label class="field"><span>บทบาทที่ขอใช้งาน</span><select name="requestedRole">
+          <option value="lecturer">อาจารย์</option><option value="chair">ประธานหลักสูตร</option><option value="executive">ผู้บริหาร</option><option value="admin">ผู้ดูแลระบบ (เจ้าหน้าที่)</option></select></label>
+        <label class="field"><span>หลักสูตร</span><select name="requestedProgramId" id="registerProgram"><option value="">— ไม่ระบุ —</option></select></label>
+        <label class="field"><span>หมายเหตุถึงผู้ดูแลระบบ</span><input name="requestNote" placeholder="เช่น ตำแหน่ง / หน่วยงาน"></label>
+        <div class="login-error" id="registerError" role="alert" hidden></div>
+        <button class="btn primary" type="submit">ส่งคำขอสมัครใช้งาน</button>
+        <p class="small muted" style="margin:0">หลังสมัคร ผู้ดูแลระบบจะตรวจสอบและกำหนดสิทธิ์ให้ก่อนเข้าใช้งาน</p>
       </form>
       <div class="login-hint" id="loginHint"></div>
       <button class="icon-btn login-theme" data-action="toggle-theme" aria-label="สลับโหมดมืด/สว่าง"><span data-icon="sun"></span></button>

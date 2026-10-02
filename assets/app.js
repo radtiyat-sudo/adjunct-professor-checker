@@ -126,6 +126,7 @@
       weights,
       targets: { bachelor: C.LEVELS.bachelor.target, master: C.LEVELS.master.target, phd: C.LEVELS.phd.target },
       requirements: JSON.parse(JSON.stringify(C.DEFAULT_REQUIREMENTS)),
+      adminEmails: [], // อีเมลที่ได้สิทธิ์ผู้ดูแลระบบทันทีเมื่อสมัครใช้งาน
       apiUrl: '',
     };
   }
@@ -140,6 +141,7 @@
     s.weights = Object.assign({}, def.weights, s.weights || {});
     s.targets = Object.assign({}, def.targets, s.targets || {});
     s.requirements = Object.assign({}, def.requirements, s.requirements || {});
+    if (!Array.isArray(s.adminEmails)) s.adminEmails = [];
     if (OLD_NAMES.includes(s.collegeName)) { s.collegeName = def.collegeName; s.university = def.university; }
     d.settings = s;
     return d;
@@ -209,6 +211,21 @@
 
   // ================= Permissions =================
   const role = () => (S.user ? S.user.role : '');
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const isActive = (u) => !u.status || u.status === 'active';
+  const USER_STATUS = {
+    pending: { label: 'รออนุมัติ', tone: 'warning' },
+    rejected: { label: 'ไม่อนุมัติ', tone: 'danger' },
+    disabled: { label: 'ระงับการใช้งาน', tone: 'neutral' },
+  };
+  const roleMeta = (u) => (isActive(u) ? C.USER_ROLES[u.role] : USER_STATUS[u.status]) || { label: '—', tone: 'neutral' };
+  const pendingUsers = () => (isAdmin() ? S.data.users.filter((u) => u.status === 'pending') : []);
+  function loginBlockReason(u) {
+    if (u.status === 'pending') return 'บัญชีนี้อยู่ระหว่างรอผู้ดูแลระบบอนุมัติ กรุณาลองใหม่ภายหลัง';
+    if (u.status === 'rejected') return 'คำขอสมัครใช้งานไม่ได้รับอนุมัติ กรุณาติดต่อผู้ดูแลระบบ';
+    if (u.status === 'disabled') return 'บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
+    return '';
+  }
   const isAdmin = () => role() === 'admin';
   const myLecturer = () => (S.user && S.user.lecturerId ? byId(S.data.lecturers, S.user.lecturerId) : null);
 
@@ -439,7 +456,8 @@
     ];
     $('#nav').innerHTML = groups.map(([g, keys]) => {
       const links = keys.filter((k) => !ROUTES[k].allow || ROUTES[k].allow()).map((k) => {
-        const count = k === 'verify' && pending ? `<span class="count">${pending}</span>` : '';
+        const n = k === 'verify' ? pending : k === 'admin' ? pendingUsers().length : 0;
+        const count = n ? `<span class="count">${n}</span>` : '';
         return `<a href="#/${k}" data-route="${k}">${ic(ROUTES[k].icon)}${esc(ROUTES[k].title)}${count}</a>`;
       }).join('');
       return links ? `<div class="nav-sep">${g}</div>${links}` : '';
@@ -500,6 +518,7 @@
     if (A.expiring.length) alertBlocks.push(`<div class="alert tone-warning">${ic('clock')}<div><b>ผลงานใกล้หมดอายุ ${s.windowYears} ปี (ตีพิมพ์ปี ${windowStart()} — จะไม่นับในปี ${s.refYear + 1})</b>${A.expiring.slice(0, 6).map(({ l, e }) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a> (${e.expiring.length} เรื่อง)`).join(', ')}</div></div>`);
     if (A.failing.length) alertBlocks.push(`<div class="alert tone-danger">${ic('alert')}<div><b>อาจารย์ที่ผลงานยังไม่ถึงเกณฑ์ขั้นต่ำ (${A.failing.length} ท่าน)</b>${A.failing.slice(0, 6).map(({ l, e }) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a> (${e.counted.length}/${e.req.minWorks})`).join(', ')}</div></div>`);
     if (A.pending.length && (isAdmin() || role() === 'chair')) alertBlocks.push(`<div class="alert tone-info">${ic('hourglass')}<div><b>ผลงานรอตรวจรับรอง ${A.pending.length} รายการ</b><a href="#/verify">ไปที่หน้าตรวจรับรองผลงาน →</a></div></div>`);
+    if (pendingUsers().length) alertBlocks.push(`<div class="alert tone-info">${ic('user')}<div><b>คำขอสมัครใช้งานรออนุมัติ ${pendingUsers().length} รายการ</b><a href="#/admin" data-action="tab" data-tab="admin" data-value="users">ตรวจสอบและกำหนดสิทธิ์ →</a></div></div>`);
     if (A.rejected.length) alertBlocks.push(`<div class="alert tone-danger">${ic('edit')}<div><b>ผลงานถูกส่งกลับแก้ไข ${A.rejected.length} รายการ</b><a href="#/works?status=rejected" data-action="filter-works" data-status="rejected">ดูรายการ →</a></div></div>`);
     if (A.expired.length) alertBlocks.push(`<div class="alert tone-neutral">${ic('info')}<div><b>ผลงานเกิน ${s.windowYears} ปี ${A.expired.length} รายการ</b>ไม่ถูกนำมาคิดคะแนนในปีประเมิน ${s.refYear} (ยังเก็บไว้เป็นประวัติ)</div></div>`);
 
@@ -1338,38 +1357,64 @@
   }
 
   function adminUsers() {
-    const rows = S.data.users.map((u) => `<tr><td><div class="person-cell"><div class="avatar sm">${esc(initials(u.displayName))}</div><div><div class="cell-title">${esc(u.displayName)}</div><div class="cell-sub">${esc(u.username)}</div></div></div></td>
-      <td>${chip(C.USER_ROLES[u.role].label, C.USER_ROLES[u.role].tone)}</td>
+    const reqs = S.data.users.filter((u) => u.status === 'pending').sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    const reqLabel = (r) => (C.USER_ROLES[r] || { label: '—' }).label;
+    const reqCard = `<div class="card mb"><div class="card-head"><h2>${ic('user')} คำขอสมัครใช้งาน (${reqs.length})</h2><span class="muted small">ผู้ใช้สมัครด้วยอีเมลที่หน้าเข้าสู่ระบบ</span></div>
+      ${reqs.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>ผู้สมัคร</th><th>บทบาทที่ขอ</th><th>หลักสูตร</th><th>หมายเหตุ</th><th>วันที่สมัคร</th><th></th></tr></thead><tbody>
+        ${reqs.map((u) => `<tr><td><div class="cell-title">${esc(u.displayName)}</div><div class="cell-sub">${esc(u.email || u.username)}</div></td>
+          <td>${chip(reqLabel(u.requestedRole), (C.USER_ROLES[u.requestedRole] || { tone: 'neutral' }).tone)}</td>
+          <td>${u.requestedProgramId ? esc(programName(u.requestedProgramId)) : '<span class="muted">—</span>'}</td>
+          <td class="cell-sub">${esc(u.requestNote || '—')}</td><td class="cell-sub">${fmtDate(u.createdAt)}</td>
+          <td class="actions"><button class="btn sm primary" data-action="approve-user" data-id="${u.id}">${ic('check')}อนุมัติ</button><button class="btn sm danger" data-action="reject-user" data-id="${u.id}">ไม่อนุมัติ</button></td></tr>`).join('')}
+        </tbody></table></div>` : `<div class="card-body muted small">ไม่มีคำขอที่รออนุมัติ · ผู้ใช้ใหม่สมัครได้ที่แท็บ “สมัครใช้งานด้วยอีเมล” ในหน้าเข้าสู่ระบบ</div>`}</div>`;
+    const users = S.data.users.filter((u) => u.status !== 'pending');
+    const rows = users.map((u) => `<tr><td><div class="person-cell"><div class="avatar sm">${esc(initials(u.displayName))}</div><div><div class="cell-title">${esc(u.displayName)}</div><div class="cell-sub">${esc(u.email || u.username)}</div></div></div></td>
+      <td>${chip(roleMeta(u).label, roleMeta(u).tone)}</td>
       <td>${u.role === 'chair' ? esc(programName(u.programId)) : u.role === 'lecturer' ? esc(lecturerName(byId(S.data.lecturers, u.lecturerId))) : '<span class="muted">ทั้งบัณฑิตวิทยาลัย</span>'}</td>
       <td class="actions"><button class="btn sm" data-action="edit-user" data-id="${u.id}">${ic('edit')}</button>${u.id !== S.user.id ? `<button class="btn sm danger" data-action="delete-user" data-id="${u.id}">${ic('trash')}</button>` : ''}</td></tr>`).join('');
-    return `<div class="card"><div class="card-head"><h2>${ic('users')} บัญชีผู้ใช้งาน (${S.data.users.length})</h2><button class="btn primary sm" data-action="add-user">${ic('plus')}เพิ่มผู้ใช้</button></div>
+    return `${reqCard}<div class="card"><div class="card-head"><h2>${ic('users')} บัญชีผู้ใช้งาน (${users.length})</h2><button class="btn primary sm" data-action="add-user">${ic('plus')}เพิ่มผู้ใช้</button></div>
       <div class="table-wrap"><table class="table"><thead><tr><th>ผู้ใช้</th><th>บทบาท</th><th>ขอบเขตข้อมูล</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }
 
-  function openUserForm(u) {
+  function openUserForm(u, approving) {
     const editing = !!u;
     u = u || { role: 'lecturer' };
+    // ตอนอนุมัติ: ตั้งค่าเริ่มต้นตามที่ผู้สมัครขอ และจับคู่อาจารย์จากอีเมลให้อัตโนมัติ
+    const initRole = approving ? (u.requestedRole || 'lecturer') : u.role;
+    const initProgram = approving ? (u.requestedProgramId || '') : u.programId;
+    const matchLec = approving && u.email ? S.data.lecturers.find((l) => String(l.email || '').toLowerCase() === u.email) : null;
+    const initLecturer = approving ? (matchLec ? matchLec.id : '') : u.lecturerId;
     const form = openModal({
-      title: editing ? 'แก้ไขผู้ใช้งาน' : 'เพิ่มผู้ใช้งาน',
-      body: `<div class="form-grid">
-        <label class="field"><span>ชื่อผู้ใช้ (Username) <em>*</em></span><input name="username" required value="${esc(u.username)}" ${editing ? 'readonly' : ''} pattern="[A-Za-z0-9._-]{3,}" title="อย่างน้อย 3 ตัว (a-z, 0-9, . _ -)"></label>
+      title: approving ? 'อนุมัติคำขอและกำหนดสิทธิ์' : editing ? 'แก้ไขผู้ใช้งาน' : 'เพิ่มผู้ใช้งาน',
+      submitLabel: approving ? 'อนุมัติและเปิดใช้งาน' : 'บันทึก',
+      body: `${approving ? `<div class="alert tone-info mb">${ic('info')}<div><b>${esc(u.displayName)} · ${esc(u.email)}</b>ขอสิทธิ์: ${esc((C.USER_ROLES[u.requestedRole] || { label: '—' }).label)}${u.requestNote ? ' · ' + esc(u.requestNote) : ''}</div></div>` : ''}
+        <div class="form-grid">
+        <label class="field"><span>ชื่อผู้ใช้ (Username) <em>*</em></span><input name="username" required value="${esc(u.username)}" ${editing ? 'readonly' : ''} pattern="[A-Za-z0-9._@+\-]{3,}" title="อย่างน้อย 3 ตัว (a-z, 0-9, . _ - @)"></label>
         <label class="field"><span>ชื่อที่แสดง <em>*</em></span><input name="displayName" required value="${esc(u.displayName)}"></label>
-        <label class="field"><span>บทบาท</span><select name="role" data-role-select>${Object.entries(C.USER_ROLES).map(([k, v]) => opt(k, v.label, u.role)).join('')}</select></label>
+        <label class="field"><span>อีเมล</span><input name="email" type="email" value="${esc(u.email)}" ${u.email && editing ? 'readonly' : ''}></label>
+        <label class="field"><span>บทบาท</span><select name="role" data-role-select>${Object.entries(C.USER_ROLES).map(([k, v]) => opt(k, v.label, initRole)).join('')}</select></label>
         <label class="field"><span>รหัสผ่าน ${editing ? '<small>(เว้นว่างหากไม่เปลี่ยน)</small>' : '<em>*</em>'}</span><input name="password" type="password" minlength="6" ${editing ? '' : 'required'} autocomplete="new-password"></label>
-        <label class="field full" data-for="chair"><span>หลักสูตรที่ดูแล</span><select name="programId"><option value="">— เลือก —</option>${S.data.programs.map((p) => opt(p.id, p.name, u.programId)).join('')}</select></label>
-        <label class="field full" data-for="lecturer"><span>ผูกกับรายชื่ออาจารย์</span><select name="lecturerId"><option value="">— เลือก —</option>${S.data.lecturers.map((l) => opt(l.id, lecturerName(l) + ' · ' + programName(l.programId), u.lecturerId)).join('')}</select></label>
+        ${editing && !approving && u.id !== S.user.id ? `<label class="field"><span>สถานะบัญชี</span><select name="status">${opt('active', 'ใช้งานได้', u.status || 'active')}${opt('disabled', 'ระงับการใช้งาน', u.status)}${u.status === 'rejected' ? opt('rejected', 'ไม่อนุมัติ', u.status) : ''}</select></label>` : ''}
+        <label class="field full" data-for="chair"><span>หลักสูตรที่ดูแล</span><select name="programId"><option value="">— เลือก —</option>${S.data.programs.map((p) => opt(p.id, p.name, initProgram)).join('')}</select></label>
+        <label class="field full" data-for="lecturer"><span>ผูกกับรายชื่ออาจารย์${matchLec ? ' <small>(จับคู่จากอีเมลอัตโนมัติ)</small>' : ''}</span><select name="lecturerId"><option value="">— เลือก —</option>${S.data.lecturers.map((l) => opt(l.id, lecturerName(l) + ' · ' + programName(l.programId), initLecturer)).join('')}</select></label>
       </div>`,
       onSubmit: async (v) => {
         const username = v.username.trim().toLowerCase();
+        const email = String(v.email || '').trim().toLowerCase();
         if (!editing && S.data.users.some((x) => x.username === username)) throw new Error('ชื่อผู้ใช้นี้มีอยู่แล้ว');
+        if (email && !EMAIL_RE.test(email)) throw new Error('รูปแบบอีเมลไม่ถูกต้อง');
+        if (email && S.data.users.some((x) => x.id !== u.id && x.email === email)) throw new Error('อีเมลนี้ถูกใช้กับบัญชีอื่นแล้ว');
         if (v.role === 'chair' && !v.programId) throw new Error('กรุณาเลือกหลักสูตรของประธานหลักสูตร');
         if (v.role === 'lecturer' && !v.lecturerId) throw new Error('กรุณาผูกบัญชีกับรายชื่ออาจารย์');
-        const rec = Object.assign({}, u, { id: u.id || uid('u'), username, displayName: v.displayName.trim(), role: v.role,
+        const rec = Object.assign({}, u, { id: u.id || uid('u'), username, email, displayName: v.displayName.trim(), role: v.role,
           programId: v.role === 'chair' ? v.programId : '', lecturerId: v.role === 'lecturer' ? v.lecturerId : '' });
+        if (approving) Object.assign(rec, { status: 'active', approvedBy: S.user.displayName || S.user.username, approvedAt: new Date().toISOString() });
+        else if (v.status) rec.status = v.status;
+        else if (!rec.status) rec.status = 'active';
         if (v.password) rec.passwordHash = await hashPw(username, v.password);
         await upsert('users', rec);
         if (rec.id === S.user.id) { S.user = rec; renderUserChip(); }
-        toast('บันทึกผู้ใช้งานแล้ว');
+        toast(approving ? `อนุมัติแล้ว — ${rec.displayName} เข้าสู่ระบบด้วย ${rec.username} ได้ทันที` : 'บันทึกผู้ใช้งานแล้ว');
         render();
       },
     });
@@ -1395,6 +1440,8 @@
         <label class="field"><span>ร้อยละเป้าหมาย ป.ตรี (= 5 คะแนน)</span><input name="t:bachelor" type="number" min="1" value="${s.targets.bachelor}"></label>
         <label class="field"><span>ร้อยละเป้าหมาย ป.โท</span><input name="t:master" type="number" min="1" value="${s.targets.master}"></label>
         <label class="field"><span>ร้อยละเป้าหมาย ป.เอก</span><input name="t:phd" type="number" min="1" value="${s.targets.phd}"></label>
+        <label class="field full"><span>อีเมลผู้ดูแลระบบ <small>(สมัครด้วยอีเมลเหล่านี้จะได้สิทธิ์ Admin ทันทีโดยไม่ต้องรออนุมัติ · บรรทัดละ 1 อีเมล)</small></span>
+          <textarea name="adminEmails" rows="3" placeholder="name@mahidol.ac.th">${esc((s.adminEmails || []).join('\n'))}</textarea></label>
       </div></div></div>
       <div class="card"><div class="card-head"><h2>${ic('users')} เกณฑ์ผลงานขั้นต่ำของอาจารย์ (ในช่วงนับผลงาน)</h2></div><div class="table-wrap"><table class="table"><thead><tr><th>กลุ่ม</th><th>จำนวนผลงานขั้นต่ำ</th><th>เป็นงานวิจัยอย่างน้อย</th></tr></thead><tbody>
         ${reqRow('bachelor', 'อาจารย์ในหลักสูตรปริญญาตรี')}${reqRow('master', 'อาจารย์ในหลักสูตรปริญญาโท')}${reqRow('phd', 'อาจารย์ในหลักสูตรปริญญาเอก')}${reqRow('adjunct', 'อาจารย์พิเศษ (นับเฉพาะวารสารตามประกาศ ก.พ.อ.)')}
@@ -1578,6 +1625,14 @@
       if (await confirmBox('ลบหลักสูตร', `ต้องการลบหลักสูตร “${esc(p.name)}” ใช่หรือไม่?`, 'ลบ')) { await remove('programs', p.id); toast('ลบหลักสูตรแล้ว'); render(); }
     },
     'add-user': () => openUserForm(null),
+    'approve-user': (el) => openUserForm(byId(S.data.users, el.dataset.id), true),
+    'reject-user': async (el) => {
+      const u = byId(S.data.users, el.dataset.id);
+      if (await confirmBox('ไม่อนุมัติคำขอ', `ไม่อนุมัติคำขอสมัครใช้งานของ “${esc(u.displayName)}” (${esc(u.email)}) ใช่หรือไม่? ผู้สมัครจะเข้าสู่ระบบไม่ได้`, 'ไม่อนุมัติ')) {
+        await upsert('users', Object.assign({}, u, { status: 'rejected', approvedBy: S.user.displayName || S.user.username, approvedAt: new Date().toISOString() }));
+        toast('บันทึกแล้ว — ไม่อนุมัติคำขอ'); render();
+      }
+    },
     'edit-user': (el) => openUserForm(byId(S.data.users, el.dataset.id)),
     'delete-user': async (el) => {
       const u = byId(S.data.users, el.dataset.id);
@@ -1668,6 +1723,7 @@
       s.university = fd.university.trim() || s.university;
       s.refYear = parseInt(fd.refYear, 10) || s.refYear;
       s.windowYears = Math.max(1, parseInt(fd.windowYears, 10) || 5);
+      s.adminEmails = String(fd.adminEmails || '').split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter((x) => EMAIL_RE.test(x));
       Object.keys(fd).forEach((k) => {
         const v = fd[k];
         if (k.startsWith('w:')) s.weights[k.slice(2)] = Math.max(0, parseFloat(v) || 0);
@@ -1728,7 +1784,7 @@
   }
   function renderUserChip() {
     const u = S.user;
-    $('#userChip').innerHTML = `<div class="avatar">${esc(initials(u.displayName))}</div><div style="min-width:0"><div class="n">${esc(u.displayName)}</div><div class="r">${esc(C.USER_ROLES[u.role].label)}</div></div>`;
+    $('#userChip').innerHTML = `<div class="avatar">${esc(initials(u.displayName))}</div><div style="min-width:0"><div class="n">${esc(u.displayName)}</div><div class="r">${esc(roleMeta(u).label)}</div></div>`;
     $('#syncState').textContent = S.remote ? 'เชื่อมต่อ Google Sheets' : 'บันทึกในเครื่องนี้';
     $('#syncState').classList.toggle('online', S.remote);
   }
@@ -1746,7 +1802,8 @@
     hydrateIcons();
     updateThemeIcon();
     const demo = !S.remote && S.data && S.data.settings.demo;
-    $('#loginHint').innerHTML = S.remote ? 'เชื่อมต่อฐานข้อมูล Google Sheets' : demo
+    showAuthTab('login');
+    $('#loginHint').innerHTML = S.remote ? 'ผู้ใช้ใหม่: สมัครด้วยอีเมลที่แท็บ “สมัครใช้งานด้วยอีเมล” แล้วรอผู้ดูแลระบบอนุมัติ' : demo
       ? 'บัญชีทดลอง: <code>admin</code> / <code>admin1234</code> · <code>chair</code> / <code>chair1234</code> · <code>lecturer</code> / <code>lecturer1234</code> · <code>exec</code> / <code>exec1234</code>'
       : 'ข้อมูลเก็บในเบราว์เซอร์ของเครื่องนี้';
     $('#loginForm').username.focus();
@@ -1754,6 +1811,7 @@
   function logout() {
     if (S.remote && S.token) api('logout').catch(() => {});
     S.user = null; S.token = null;
+    view.tabs = {}; view.filters = {}; // ผู้ใช้คนถัดไปเริ่มจากหน้าตั้งต้น
     try { sessionStorage.removeItem(SESSION); } catch (e) {}
     boot();
   }
@@ -1764,16 +1822,19 @@
     const username = f.username.value.trim().toLowerCase();
     const err = $('#loginError');
     err.hidden = true;
+    $('#loginOk').hidden = true;
     const btn = $('button[type=submit]', f);
     btn.disabled = true;
     try {
-      const passwordHash = await hashPw(username, f.password.value);
       if (S.remote) {
-        const r = await api('login', { username, passwordHash });
+        const name = (await api('lookup', { username })).username; // รองรับการเข้าด้วยอีเมล
+        const passwordHash = await hashPw(name, f.password.value);
+        const r = await api('login', { username: name, passwordHash });
         S.token = r.token; S.user = r.user; S.data = normalize(r.data);
       } else {
-        const u = S.data.users.find((x) => x.username === username);
-        if (!u || u.passwordHash !== passwordHash) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+        const u = S.data.users.find((x) => x.username === username || (x.email && x.email === username));
+        if (!u || u.passwordHash !== await hashPw(u.username, f.password.value)) throw new Error('อีเมล/ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง');
+        if (loginBlockReason(u)) throw new Error(loginBlockReason(u));
         S.user = u;
       }
       persistSession();
@@ -1782,6 +1843,66 @@
       showApp();
     } catch (e) {
       err.textContent = e.message || 'เข้าสู่ระบบไม่สำเร็จ';
+      err.hidden = false;
+    } finally { btn.disabled = false; }
+  });
+
+  // ---- สมัครใช้งานด้วยอีเมล ----
+  function showAuthTab(tab) {
+    $$('[data-auth-tab]').forEach((b) => { const on = b.dataset.authTab === tab; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
+    $('#loginForm').hidden = tab !== 'login';
+    $('#registerForm').hidden = tab !== 'register';
+    if (tab === 'register') loadRegisterPrograms();
+  }
+  $$('[data-auth-tab]').forEach((b) => b.addEventListener('click', () => showAuthTab(b.dataset.authTab)));
+
+  async function loadRegisterPrograms() {
+    const sel = $('#registerProgram');
+    let progs = [];
+    try { progs = S.remote ? (await api('programs')).programs : S.data.programs; } catch (e) { progs = []; }
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— ไม่ระบุ —</option>' + progs.map((p) => opt(p.id, p.name, cur)).join('');
+  }
+
+  function registerLocal(req) {
+    const s = S.data.settings;
+    if (S.data.users.some((u) => u.username === req.email || u.email === req.email)) throw new Error('อีเมลนี้ถูกใช้สมัครแล้ว หากลืมรหัสผ่านกรุณาติดต่อผู้ดูแลระบบ');
+    const admin = (s.adminEmails || []).includes(req.email);
+    const user = { id: uid('u'), username: req.email, email: req.email, displayName: req.displayName, passwordHash: req.passwordHash,
+      role: admin ? 'admin' : '', status: admin ? 'active' : 'pending', requestedRole: req.requestedRole, requestedProgramId: req.requestedProgramId,
+      requestNote: req.requestNote, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    S.data.users.push(user);
+    saveLocal();
+    return { ok: true, status: user.status };
+  }
+
+  $('#registerForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    const err = $('#registerError');
+    err.hidden = true;
+    const btn = $('button[type=submit]', f);
+    btn.disabled = true;
+    try {
+      const email = f.email.value.trim().toLowerCase();
+      if (!EMAIL_RE.test(email)) throw new Error('กรุณากรอกอีเมลให้ถูกต้อง');
+      if (!f.displayName.value.trim()) throw new Error('กรุณากรอกชื่อ - นามสกุล');
+      if (f.password.value.length < 8) throw new Error('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร');
+      if (f.password.value !== f.password2.value) throw new Error('ยืนยันรหัสผ่านไม่ตรงกัน');
+      const req = { email, displayName: f.displayName.value.trim(), passwordHash: await hashPw(email, f.password.value),
+        requestedRole: f.requestedRole.value, requestedProgramId: f.requestedProgramId.value, requestNote: f.requestNote.value.trim() };
+      const r = S.remote ? await api('register', req) : registerLocal(req);
+      f.reset();
+      showAuthTab('login');
+      $('#loginForm').username.value = email;
+      const ok = $('#loginOk');
+      ok.textContent = r.status === 'active'
+        ? 'สมัครสำเร็จ — อีเมลนี้ได้รับสิทธิ์ผู้ดูแลระบบ เข้าสู่ระบบได้ทันที'
+        : 'ส่งคำขอสมัครใช้งานแล้ว — เข้าสู่ระบบได้หลังผู้ดูแลระบบอนุมัติและกำหนดสิทธิ์';
+      ok.hidden = false;
+      $('#loginForm').password.focus();
+    } catch (e) {
+      err.textContent = e.message || 'สมัครใช้งานไม่สำเร็จ';
       err.hidden = false;
     } finally { btn.disabled = false; }
   });
@@ -1806,7 +1927,8 @@
     if (!S.data) { S.data = normalize(await sampleData()); saveLocal(); }
     if (session && session.userId) {
       S.user = byId(S.data.users, session.userId) || null;
-      if (S.user) return showApp();
+      if (S.user && isActive(S.user)) return showApp();
+      S.user = null;
     }
     showLogin();
   }

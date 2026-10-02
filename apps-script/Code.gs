@@ -11,14 +11,24 @@
  * 5) เปิด URL (.../exec) จะเห็นหน้าเข้าสู่ระบบ — เข้าด้วย admin แล้วเปลี่ยนรหัสผ่านทันที
  *
  * สิทธิ์การเข้าถึงข้อมูลถูกตรวจซ้ำที่ฝั่งเซิร์ฟเวอร์นี้ (ไม่เชื่อข้อมูลจากเบราว์เซอร์)
+ *
+ * การสมัครใช้งานด้วยอีเมล
+ * - ผู้ใช้สมัครที่หน้าเข้าสู่ระบบ → สถานะ "รออนุมัติ" → Admin อนุมัติและกำหนดสิทธิ์ที่ จัดการระบบ > ผู้ใช้งาน
+ * - อีเมลใน ADMIN_EMAILS (ด้านล่าง) หรือในหน้า ตั้งค่าเกณฑ์ > อีเมลผู้ดูแลระบบ จะได้สิทธิ์ Admin ทันทีเมื่อสมัคร
  */
+
+// ใส่อีเมลผู้ดูแลระบบ เช่น ['staff1@mahidol.ac.th', 'staff2@mahidol.ac.th']
+// ถ้ากำหนดไว้ setup จะไม่สร้างบัญชี admin / admin1234 — ให้สมัครด้วยอีเมลเหล่านี้แทน
+var ADMIN_EMAILS = [];
 
 var FIELDS = {
   programs: ['id', 'name', 'degree', 'level', 'chair', 'curriculumYear', 'updatedAt'],
   lecturers: ['id', 'prefix', 'position', 'nameTh', 'nameEn', 'programId', 'type', 'email', 'degree', 'scopusId', 'orcid', 'active', 'updatedAt'],
   works: ['id', 'lecturerId', 'title', 'type', 'authorRole', 'category', 'quartile', 'journal', 'issn', 'year', 'detail', 'doi', 'url', 'note',
     'status', 'reviewNote', 'reviewedBy', 'reviewedAt', 'createdBy', 'createdAt', 'updatedAt'],
-  users: ['id', 'username', 'displayName', 'role', 'programId', 'lecturerId', 'passwordHash', 'updatedAt'],
+  // เพิ่มคอลัมน์ใหม่ต่อท้ายเสมอ เพื่อให้ข้อมูลเดิมในชีตยังตรงคอลัมน์
+  users: ['id', 'username', 'displayName', 'role', 'programId', 'lecturerId', 'passwordHash', 'updatedAt',
+    'email', 'status', 'requestedRole', 'requestedProgramId', 'requestNote', 'createdAt', 'approvedBy', 'approvedAt'],
   externals: ['id', 'prefix', 'position', 'nameTh', 'nameEn', 'affiliation', 'degreeLevel', 'degreeName', 'role', 'programId', 'examLevel', 'standard',
     'scopusId', 'orcid', 'researchExp', 'pubs', 'checkNote', 'checkResult', 'checkedBy', 'checkedAt', 'createdBy', 'createdAt', 'updatedAt'],
 };
@@ -36,7 +46,7 @@ function setup() {
     sh.setFrozenRows(1);
   });
   if (!ss.getSheetByName('Settings')) ss.insertSheet('Settings').getRange(1, 1, 1, 2).setValues([['key', 'value']]);
-  if (!readAll('users').some(function (u) { return u.role === 'admin'; })) {
+  if (!ADMIN_EMAILS.length && !readAll('users').some(function (u) { return u.role === 'admin'; })) {
     writeRecord('users', { id: 'u_admin', username: 'admin', displayName: 'ผู้ดูแลระบบ', role: 'admin', passwordHash: sha256('admin:admin1234'), updatedAt: new Date().toISOString() });
   }
 }
@@ -57,7 +67,7 @@ function doGet(e) {
 }
 
 // จำนวนไฟล์ app1…appN (ตรงกับผลจาก tools/build_gas.py)
-var APP_PARTS = 7;
+var APP_PARTS = 8;
 
 // รวมไฟล์ย่อย (css, criteria, app1, app2, …) เข้าในหน้า index
 function include(name) {
@@ -82,6 +92,9 @@ function handle(req) {
   var lock = LockService.getScriptLock();
   try {
     if (req.action === 'login') return login(req);
+    if (req.action === 'lookup') return lookup(req);
+    if (req.action === 'register') { lock.waitLock(20000); return register(req); }
+    if (req.action === 'programs') return { ok: true, programs: readAll('programs').map(function (p) { return { id: p.id, name: p.name, level: p.level }; }) };
     var user = auth(req.token);
     lock.waitLock(20000);
     switch (req.action) {
@@ -107,7 +120,9 @@ function json(obj) {
 function login(req) {
   var username = String(req.username || '').toLowerCase();
   var u = readAll('users').filter(function (x) { return x.username === username; })[0];
-  if (!u || u.passwordHash !== req.passwordHash) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+  if (!u || u.passwordHash !== req.passwordHash) throw new Error('อีเมล/ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง');
+  var blocked = blockReason(u);
+  if (blocked) throw new Error(blocked);
   var token = Utilities.getUuid();
   CacheService.getScriptCache().put('t_' + token, u.id, SESSION_SECONDS);
   return { ok: true, token: token, user: publicUser(u), data: loadData(u) };
@@ -118,7 +133,48 @@ function auth(token) {
   if (!id) throw new Error('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
   var u = readAll('users').filter(function (x) { return x.id === id; })[0];
   if (!u) throw new Error('ไม่พบผู้ใช้');
+  if (blockReason(u)) throw new Error(blockReason(u));
   return u;
+}
+
+function blockReason(u) {
+  if (u.status === 'pending') return 'บัญชีนี้อยู่ระหว่างรอผู้ดูแลระบบอนุมัติ กรุณาลองใหม่ภายหลัง';
+  if (u.status === 'rejected') return 'คำขอสมัครใช้งานไม่ได้รับอนุมัติ กรุณาติดต่อผู้ดูแลระบบ';
+  if (u.status === 'disabled') return 'บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
+  return '';
+}
+
+function isAdminEmail(email) {
+  var list = ADMIN_EMAILS.concat(readSettings().adminEmails || []).map(function (x) { return String(x).trim().toLowerCase(); });
+  return list.indexOf(email) >= 0;
+}
+
+// แปลงอีเมลเป็นชื่อผู้ใช้ (รหัสผ่านถูก hash คู่กับชื่อผู้ใช้)
+function lookup(req) {
+  var id = String(req.username || '').toLowerCase();
+  var u = readAll('users').filter(function (x) { return x.username === id || (x.email && x.email === id); })[0];
+  return { ok: true, username: u ? u.username : id };
+}
+
+// สมัครใช้งานด้วยอีเมล (ไม่ต้องเข้าสู่ระบบ)
+function register(req) {
+  var email = String(req.email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('กรุณากรอกอีเมลให้ถูกต้อง');
+  if (!req.displayName || !String(req.displayName).trim()) throw new Error('กรุณากรอกชื่อ - นามสกุล');
+  if (!/^[0-9a-f]{64}$/.test(String(req.passwordHash || ''))) throw new Error('ข้อมูลรหัสผ่านไม่ถูกต้อง');
+  var users = readAll('users');
+  if (users.some(function (u) { return u.username === email || u.email === email; })) throw new Error('อีเมลนี้ถูกใช้สมัครแล้ว หากลืมรหัสผ่านกรุณาติดต่อผู้ดูแลระบบ');
+  var admin = isAdminEmail(email);
+  var roles = ['lecturer', 'chair', 'executive', 'admin'];
+  var now = new Date().toISOString();
+  writeRecord('users', {
+    id: 'u_' + Utilities.getUuid().slice(0, 12), username: email, email: email, displayName: String(req.displayName).trim().slice(0, 120),
+    passwordHash: req.passwordHash, role: admin ? 'admin' : '', status: admin ? 'active' : 'pending',
+    requestedRole: roles.indexOf(req.requestedRole) >= 0 ? req.requestedRole : 'lecturer',
+    requestedProgramId: String(req.requestedProgramId || ''), requestNote: String(req.requestNote || '').slice(0, 300),
+    createdAt: now, updatedAt: now, approvedBy: admin ? 'อัตโนมัติ (ADMIN_EMAILS)' : '', approvedAt: admin ? now : '',
+  });
+  return { ok: true, status: admin ? 'active' : 'pending' };
 }
 
 function publicUser(u) {
@@ -141,10 +197,18 @@ function loadData(user) {
   return data;
 }
 
+var HEADER_OK = {};
 function sheetOf(entity) {
   if (!FIELDS[entity]) throw new Error('ไม่รู้จักข้อมูลประเภท ' + entity);
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES[entity]);
   if (!sh) throw new Error('ไม่พบชีต ' + SHEET_NAMES[entity] + ' — กรุณารันฟังก์ชัน setup');
+  // อัปเดตหัวตารางอัตโนมัติเมื่อมีคอลัมน์ใหม่ (คอลัมน์ใหม่อยู่ท้ายเสมอ ข้อมูลเดิมไม่เลื่อน)
+  if (!HEADER_OK[entity]) {
+    var want = FIELDS[entity];
+    var head = sh.getRange(1, 1, 1, want.length).getValues()[0];
+    if (head.join('|') !== want.join('|')) sh.getRange(1, 1, 1, want.length).setValues([want]);
+    HEADER_OK[entity] = true;
+  }
   return sh;
 }
 

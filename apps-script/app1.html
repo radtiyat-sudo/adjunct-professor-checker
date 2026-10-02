@@ -126,6 +126,7 @@
       weights,
       targets: { bachelor: C.LEVELS.bachelor.target, master: C.LEVELS.master.target, phd: C.LEVELS.phd.target },
       requirements: JSON.parse(JSON.stringify(C.DEFAULT_REQUIREMENTS)),
+      adminEmails: [], // อีเมลที่ได้สิทธิ์ผู้ดูแลระบบทันทีเมื่อสมัครใช้งาน
       apiUrl: '',
     };
   }
@@ -140,6 +141,7 @@
     s.weights = Object.assign({}, def.weights, s.weights || {});
     s.targets = Object.assign({}, def.targets, s.targets || {});
     s.requirements = Object.assign({}, def.requirements, s.requirements || {});
+    if (!Array.isArray(s.adminEmails)) s.adminEmails = [];
     if (OLD_NAMES.includes(s.collegeName)) { s.collegeName = def.collegeName; s.university = def.university; }
     d.settings = s;
     return d;
@@ -209,6 +211,21 @@
 
   // ================= Permissions =================
   const role = () => (S.user ? S.user.role : '');
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const isActive = (u) => !u.status || u.status === 'active';
+  const USER_STATUS = {
+    pending: { label: 'รออนุมัติ', tone: 'warning' },
+    rejected: { label: 'ไม่อนุมัติ', tone: 'danger' },
+    disabled: { label: 'ระงับการใช้งาน', tone: 'neutral' },
+  };
+  const roleMeta = (u) => (isActive(u) ? C.USER_ROLES[u.role] : USER_STATUS[u.status]) || { label: '—', tone: 'neutral' };
+  const pendingUsers = () => (isAdmin() ? S.data.users.filter((u) => u.status === 'pending') : []);
+  function loginBlockReason(u) {
+    if (u.status === 'pending') return 'บัญชีนี้อยู่ระหว่างรอผู้ดูแลระบบอนุมัติ กรุณาลองใหม่ภายหลัง';
+    if (u.status === 'rejected') return 'คำขอสมัครใช้งานไม่ได้รับอนุมัติ กรุณาติดต่อผู้ดูแลระบบ';
+    if (u.status === 'disabled') return 'บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
+    return '';
+  }
   const isAdmin = () => role() === 'admin';
   const myLecturer = () => (S.user && S.user.lecturerId ? byId(S.data.lecturers, S.user.lecturerId) : null);
 
@@ -250,91 +267,4 @@
     if (role() !== 'chair') return false;
     const l = w && byId(S.data.lecturers, w.lecturerId);
     return !w || (l && l.programId === S.user.programId);
-  }
-
-  // ================= Calculations =================
-  const st = () => S.data.settings;
-  const windowStart = () => st().refYear - (st().windowYears - 1);
-  const inWindow = (w) => { const y = toBE(w.year); return y >= windowStart() && y <= st().refYear; };
-  const isExpiring = (w) => toBE(w.year) === windowStart();
-  const isExpired = (w) => toBE(w.year) < windowStart();
-  function weightOf(w) {
-    const c = catOf(w.category);
-    const W = st().weights;
-    if (c.quartile && w.quartile && W[c.id + ':' + w.quartile] != null) return Number(W[c.id + ':' + w.quartile]);
-    return Number(W[c.id] != null ? W[c.id] : c.weight);
-  }
-  const isCountable = (w) => w.status === 'verified' && inWindow(w) && weightOf(w) > 0;
-  const worksOf = (lecId) => S.data.works.filter((w) => w.lecturerId === lecId);
-
-  function requirementFor(l) {
-    const R = st().requirements;
-    if (l.type === 'adjunct') return Object.assign({ key: 'adjunct' }, R.adjunct);
-    const p = byId(S.data.programs, l.programId);
-    const lv = (p && p.level) || 'bachelor';
-    return Object.assign({ key: lv }, R[lv]);
-  }
-
-  function evalLecturer(l) {
-    const req = requirementFor(l);
-    const all = worksOf(l.id);
-    const eligible = (w) => inWindow(w) && weightOf(w) > 0 && (!req.kpaOnly || !!catOf(w.category).kpa);
-    const counted = all.filter((w) => w.status === 'verified' && eligible(w));
-    const pending = all.filter((w) => w.status === 'pending' && eligible(w));
-    const research = (list) => list.filter((w) => typeOf(w.type).research).length;
-    const meets = (list) => list.length >= req.minWorks && research(list) >= (req.minResearch || 0);
-    let status = 'fail';
-    if (meets(counted)) status = 'pass';
-    else if (meets(counted.concat(pending))) status = 'pending';
-    const inWin = all.filter(inWindow);
-    return {
-      req, all, counted, pending, status,
-      research: research(counted),
-      weight: counted.reduce((s, w) => s + weightOf(w), 0),
-      noWorks: inWin.length === 0,
-      expiring: counted.filter(isExpiring),
-    };
-  }
-  const STATUS_META = {
-    pass: { label: 'ผ่านเกณฑ์', tone: 'success', icon: 'checkc' },
-    pending: { label: 'รอรับรองผลงาน', tone: 'warning', icon: 'hourglass' },
-    fail: { label: 'ยังไม่ผ่านเกณฑ์', tone: 'danger', icon: 'xc' },
-  };
-
-  // ตัวบ่งชี้ผลงานวิชาการของอาจารย์ผู้รับผิดชอบหลักสูตร (ร้อยละผลรวมถ่วงน้ำหนัก แปลงเป็นคะแนนเต็ม 5)
-  function evalProgram(p, mode) {
-    mode = mode || 'year';
-    const lecs = S.data.lecturers.filter((l) => l.programId === p.id && l.active !== false);
-    const responsible = lecs.filter((l) => l.type === 'responsible');
-    const ids = new Set(responsible.map((l) => l.id));
-    const works = S.data.works.filter((w) => ids.has(w.lecturerId) && w.status === 'verified' && weightOf(w) > 0 &&
-      (mode === 'year' ? toBE(w.year) === st().refYear : inWindow(w)));
-    const sum = works.reduce((s, w) => s + weightOf(w), 0);
-    const n = responsible.length;
-    const pct = n ? (sum / n) * 100 : 0;
-    const target = Number(st().targets[p.level || 'bachelor']) || 20;
-    const score = Math.min(5, (pct / target) * 5);
-    const evals = lecs.map((l) => ({ l, e: evalLecturer(l) }));
-    return { lecs, responsible, works, sum, n, pct, target, score, evals, passCount: evals.filter((x) => x.e.status === 'pass').length };
-  }
-  function scoreBand(s) {
-    if (s >= 4.01) return { label: 'ดีมาก', tone: 'success' };
-    if (s >= 3.01) return { label: 'ดี', tone: 'info' };
-    if (s >= 2.01) return { label: 'ปานกลาง', tone: 'warning' };
-    return { label: 'ต้องปรับปรุง', tone: 'danger' };
-  }
-
-  function buildAlerts() {
-    const lecs = scopeLecturers().filter((l) => l.active !== false);
-    const noWorks = [], failing = [], expiring = [];
-    lecs.forEach((l) => {
-      const e = evalLecturer(l);
-      if (e.noWorks) noWorks.push(l);
-      else if (e.status === 'fail') failing.push({ l, e });
-      if (e.expiring.length) expiring.push({ l, e });
-    });
-    const pending = scopeWorks().filter((w) => w.status === 'pending');
-    const rejected = scopeWorks().filter((w) => w.status === 'rejected');
-    const expired = scopeWorks().filter(isExpired);
-    return { noWorks, failing, expiring, pending, rejected, expired };
   }

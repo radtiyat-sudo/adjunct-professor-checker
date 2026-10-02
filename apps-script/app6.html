@@ -12,38 +12,64 @@
   }
 
   function adminUsers() {
-    const rows = S.data.users.map((u) => `<tr><td><div class="person-cell"><div class="avatar sm">${esc(initials(u.displayName))}</div><div><div class="cell-title">${esc(u.displayName)}</div><div class="cell-sub">${esc(u.username)}</div></div></div></td>
-      <td>${chip(C.USER_ROLES[u.role].label, C.USER_ROLES[u.role].tone)}</td>
+    const reqs = S.data.users.filter((u) => u.status === 'pending').sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    const reqLabel = (r) => (C.USER_ROLES[r] || { label: '—' }).label;
+    const reqCard = `<div class="card mb"><div class="card-head"><h2>${ic('user')} คำขอสมัครใช้งาน (${reqs.length})</h2><span class="muted small">ผู้ใช้สมัครด้วยอีเมลที่หน้าเข้าสู่ระบบ</span></div>
+      ${reqs.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>ผู้สมัคร</th><th>บทบาทที่ขอ</th><th>หลักสูตร</th><th>หมายเหตุ</th><th>วันที่สมัคร</th><th></th></tr></thead><tbody>
+        ${reqs.map((u) => `<tr><td><div class="cell-title">${esc(u.displayName)}</div><div class="cell-sub">${esc(u.email || u.username)}</div></td>
+          <td>${chip(reqLabel(u.requestedRole), (C.USER_ROLES[u.requestedRole] || { tone: 'neutral' }).tone)}</td>
+          <td>${u.requestedProgramId ? esc(programName(u.requestedProgramId)) : '<span class="muted">—</span>'}</td>
+          <td class="cell-sub">${esc(u.requestNote || '—')}</td><td class="cell-sub">${fmtDate(u.createdAt)}</td>
+          <td class="actions"><button class="btn sm primary" data-action="approve-user" data-id="${u.id}">${ic('check')}อนุมัติ</button><button class="btn sm danger" data-action="reject-user" data-id="${u.id}">ไม่อนุมัติ</button></td></tr>`).join('')}
+        </tbody></table></div>` : `<div class="card-body muted small">ไม่มีคำขอที่รออนุมัติ · ผู้ใช้ใหม่สมัครได้ที่แท็บ “สมัครใช้งานด้วยอีเมล” ในหน้าเข้าสู่ระบบ</div>`}</div>`;
+    const users = S.data.users.filter((u) => u.status !== 'pending');
+    const rows = users.map((u) => `<tr><td><div class="person-cell"><div class="avatar sm">${esc(initials(u.displayName))}</div><div><div class="cell-title">${esc(u.displayName)}</div><div class="cell-sub">${esc(u.email || u.username)}</div></div></div></td>
+      <td>${chip(roleMeta(u).label, roleMeta(u).tone)}</td>
       <td>${u.role === 'chair' ? esc(programName(u.programId)) : u.role === 'lecturer' ? esc(lecturerName(byId(S.data.lecturers, u.lecturerId))) : '<span class="muted">ทั้งบัณฑิตวิทยาลัย</span>'}</td>
       <td class="actions"><button class="btn sm" data-action="edit-user" data-id="${u.id}">${ic('edit')}</button>${u.id !== S.user.id ? `<button class="btn sm danger" data-action="delete-user" data-id="${u.id}">${ic('trash')}</button>` : ''}</td></tr>`).join('');
-    return `<div class="card"><div class="card-head"><h2>${ic('users')} บัญชีผู้ใช้งาน (${S.data.users.length})</h2><button class="btn primary sm" data-action="add-user">${ic('plus')}เพิ่มผู้ใช้</button></div>
+    return `${reqCard}<div class="card"><div class="card-head"><h2>${ic('users')} บัญชีผู้ใช้งาน (${users.length})</h2><button class="btn primary sm" data-action="add-user">${ic('plus')}เพิ่มผู้ใช้</button></div>
       <div class="table-wrap"><table class="table"><thead><tr><th>ผู้ใช้</th><th>บทบาท</th><th>ขอบเขตข้อมูล</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }
 
-  function openUserForm(u) {
+  function openUserForm(u, approving) {
     const editing = !!u;
     u = u || { role: 'lecturer' };
+    // ตอนอนุมัติ: ตั้งค่าเริ่มต้นตามที่ผู้สมัครขอ และจับคู่อาจารย์จากอีเมลให้อัตโนมัติ
+    const initRole = approving ? (u.requestedRole || 'lecturer') : u.role;
+    const initProgram = approving ? (u.requestedProgramId || '') : u.programId;
+    const matchLec = approving && u.email ? S.data.lecturers.find((l) => String(l.email || '').toLowerCase() === u.email) : null;
+    const initLecturer = approving ? (matchLec ? matchLec.id : '') : u.lecturerId;
     const form = openModal({
-      title: editing ? 'แก้ไขผู้ใช้งาน' : 'เพิ่มผู้ใช้งาน',
-      body: `<div class="form-grid">
-        <label class="field"><span>ชื่อผู้ใช้ (Username) <em>*</em></span><input name="username" required value="${esc(u.username)}" ${editing ? 'readonly' : ''} pattern="[A-Za-z0-9._-]{3,}" title="อย่างน้อย 3 ตัว (a-z, 0-9, . _ -)"></label>
+      title: approving ? 'อนุมัติคำขอและกำหนดสิทธิ์' : editing ? 'แก้ไขผู้ใช้งาน' : 'เพิ่มผู้ใช้งาน',
+      submitLabel: approving ? 'อนุมัติและเปิดใช้งาน' : 'บันทึก',
+      body: `${approving ? `<div class="alert tone-info mb">${ic('info')}<div><b>${esc(u.displayName)} · ${esc(u.email)}</b>ขอสิทธิ์: ${esc((C.USER_ROLES[u.requestedRole] || { label: '—' }).label)}${u.requestNote ? ' · ' + esc(u.requestNote) : ''}</div></div>` : ''}
+        <div class="form-grid">
+        <label class="field"><span>ชื่อผู้ใช้ (Username) <em>*</em></span><input name="username" required value="${esc(u.username)}" ${editing ? 'readonly' : ''} pattern="[A-Za-z0-9._@+\-]{3,}" title="อย่างน้อย 3 ตัว (a-z, 0-9, . _ - @)"></label>
         <label class="field"><span>ชื่อที่แสดง <em>*</em></span><input name="displayName" required value="${esc(u.displayName)}"></label>
-        <label class="field"><span>บทบาท</span><select name="role" data-role-select>${Object.entries(C.USER_ROLES).map(([k, v]) => opt(k, v.label, u.role)).join('')}</select></label>
+        <label class="field"><span>อีเมล</span><input name="email" type="email" value="${esc(u.email)}" ${u.email && editing ? 'readonly' : ''}></label>
+        <label class="field"><span>บทบาท</span><select name="role" data-role-select>${Object.entries(C.USER_ROLES).map(([k, v]) => opt(k, v.label, initRole)).join('')}</select></label>
         <label class="field"><span>รหัสผ่าน ${editing ? '<small>(เว้นว่างหากไม่เปลี่ยน)</small>' : '<em>*</em>'}</span><input name="password" type="password" minlength="6" ${editing ? '' : 'required'} autocomplete="new-password"></label>
-        <label class="field full" data-for="chair"><span>หลักสูตรที่ดูแล</span><select name="programId"><option value="">— เลือก —</option>${S.data.programs.map((p) => opt(p.id, p.name, u.programId)).join('')}</select></label>
-        <label class="field full" data-for="lecturer"><span>ผูกกับรายชื่ออาจารย์</span><select name="lecturerId"><option value="">— เลือก —</option>${S.data.lecturers.map((l) => opt(l.id, lecturerName(l) + ' · ' + programName(l.programId), u.lecturerId)).join('')}</select></label>
+        ${editing && !approving && u.id !== S.user.id ? `<label class="field"><span>สถานะบัญชี</span><select name="status">${opt('active', 'ใช้งานได้', u.status || 'active')}${opt('disabled', 'ระงับการใช้งาน', u.status)}${u.status === 'rejected' ? opt('rejected', 'ไม่อนุมัติ', u.status) : ''}</select></label>` : ''}
+        <label class="field full" data-for="chair"><span>หลักสูตรที่ดูแล</span><select name="programId"><option value="">— เลือก —</option>${S.data.programs.map((p) => opt(p.id, p.name, initProgram)).join('')}</select></label>
+        <label class="field full" data-for="lecturer"><span>ผูกกับรายชื่ออาจารย์${matchLec ? ' <small>(จับคู่จากอีเมลอัตโนมัติ)</small>' : ''}</span><select name="lecturerId"><option value="">— เลือก —</option>${S.data.lecturers.map((l) => opt(l.id, lecturerName(l) + ' · ' + programName(l.programId), initLecturer)).join('')}</select></label>
       </div>`,
       onSubmit: async (v) => {
         const username = v.username.trim().toLowerCase();
+        const email = String(v.email || '').trim().toLowerCase();
         if (!editing && S.data.users.some((x) => x.username === username)) throw new Error('ชื่อผู้ใช้นี้มีอยู่แล้ว');
+        if (email && !EMAIL_RE.test(email)) throw new Error('รูปแบบอีเมลไม่ถูกต้อง');
+        if (email && S.data.users.some((x) => x.id !== u.id && x.email === email)) throw new Error('อีเมลนี้ถูกใช้กับบัญชีอื่นแล้ว');
         if (v.role === 'chair' && !v.programId) throw new Error('กรุณาเลือกหลักสูตรของประธานหลักสูตร');
         if (v.role === 'lecturer' && !v.lecturerId) throw new Error('กรุณาผูกบัญชีกับรายชื่ออาจารย์');
-        const rec = Object.assign({}, u, { id: u.id || uid('u'), username, displayName: v.displayName.trim(), role: v.role,
+        const rec = Object.assign({}, u, { id: u.id || uid('u'), username, email, displayName: v.displayName.trim(), role: v.role,
           programId: v.role === 'chair' ? v.programId : '', lecturerId: v.role === 'lecturer' ? v.lecturerId : '' });
+        if (approving) Object.assign(rec, { status: 'active', approvedBy: S.user.displayName || S.user.username, approvedAt: new Date().toISOString() });
+        else if (v.status) rec.status = v.status;
+        else if (!rec.status) rec.status = 'active';
         if (v.password) rec.passwordHash = await hashPw(username, v.password);
         await upsert('users', rec);
         if (rec.id === S.user.id) { S.user = rec; renderUserChip(); }
-        toast('บันทึกผู้ใช้งานแล้ว');
+        toast(approving ? `อนุมัติแล้ว — ${rec.displayName} เข้าสู่ระบบด้วย ${rec.username} ได้ทันที` : 'บันทึกผู้ใช้งานแล้ว');
         render();
       },
     });
@@ -69,6 +95,8 @@
         <label class="field"><span>ร้อยละเป้าหมาย ป.ตรี (= 5 คะแนน)</span><input name="t:bachelor" type="number" min="1" value="${s.targets.bachelor}"></label>
         <label class="field"><span>ร้อยละเป้าหมาย ป.โท</span><input name="t:master" type="number" min="1" value="${s.targets.master}"></label>
         <label class="field"><span>ร้อยละเป้าหมาย ป.เอก</span><input name="t:phd" type="number" min="1" value="${s.targets.phd}"></label>
+        <label class="field full"><span>อีเมลผู้ดูแลระบบ <small>(สมัครด้วยอีเมลเหล่านี้จะได้สิทธิ์ Admin ทันทีโดยไม่ต้องรออนุมัติ · บรรทัดละ 1 อีเมล)</small></span>
+          <textarea name="adminEmails" rows="3" placeholder="name@mahidol.ac.th">${esc((s.adminEmails || []).join('\n'))}</textarea></label>
       </div></div></div>
       <div class="card"><div class="card-head"><h2>${ic('users')} เกณฑ์ผลงานขั้นต่ำของอาจารย์ (ในช่วงนับผลงาน)</h2></div><div class="table-wrap"><table class="table"><thead><tr><th>กลุ่ม</th><th>จำนวนผลงานขั้นต่ำ</th><th>เป็นงานวิจัยอย่างน้อย</th></tr></thead><tbody>
         ${reqRow('bachelor', 'อาจารย์ในหลักสูตรปริญญาตรี')}${reqRow('master', 'อาจารย์ในหลักสูตรปริญญาโท')}${reqRow('phd', 'อาจารย์ในหลักสูตรปริญญาเอก')}${reqRow('adjunct', 'อาจารย์พิเศษ (นับเฉพาะวารสารตามประกาศ ก.พ.อ.)')}

@@ -51,6 +51,14 @@
       if (await confirmBox('ลบหลักสูตร', `ต้องการลบหลักสูตร “${esc(p.name)}” ใช่หรือไม่?`, 'ลบ')) { await remove('programs', p.id); toast('ลบหลักสูตรแล้ว'); render(); }
     },
     'add-user': () => openUserForm(null),
+    'approve-user': (el) => openUserForm(byId(S.data.users, el.dataset.id), true),
+    'reject-user': async (el) => {
+      const u = byId(S.data.users, el.dataset.id);
+      if (await confirmBox('ไม่อนุมัติคำขอ', `ไม่อนุมัติคำขอสมัครใช้งานของ “${esc(u.displayName)}” (${esc(u.email)}) ใช่หรือไม่? ผู้สมัครจะเข้าสู่ระบบไม่ได้`, 'ไม่อนุมัติ')) {
+        await upsert('users', Object.assign({}, u, { status: 'rejected', approvedBy: S.user.displayName || S.user.username, approvedAt: new Date().toISOString() }));
+        toast('บันทึกแล้ว — ไม่อนุมัติคำขอ'); render();
+      }
+    },
     'edit-user': (el) => openUserForm(byId(S.data.users, el.dataset.id)),
     'delete-user': async (el) => {
       const u = byId(S.data.users, el.dataset.id);
@@ -141,6 +149,7 @@
       s.university = fd.university.trim() || s.university;
       s.refYear = parseInt(fd.refYear, 10) || s.refYear;
       s.windowYears = Math.max(1, parseInt(fd.windowYears, 10) || 5);
+      s.adminEmails = String(fd.adminEmails || '').split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter((x) => EMAIL_RE.test(x));
       Object.keys(fd).forEach((k) => {
         const v = fd[k];
         if (k.startsWith('w:')) s.weights[k.slice(2)] = Math.max(0, parseFloat(v) || 0);
@@ -194,97 +203,3 @@
     $$('[data-action="toggle-theme"]').forEach((b) => { b.innerHTML = svg(dark ? 'sun' : 'moon'); b.title = dark ? 'สลับเป็นโหมดสว่าง' : 'สลับเป็นโหมดมืด'; });
   }
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeIcon);
-
-  // ================= Auth =================
-  function persistSession() {
-    try { sessionStorage.setItem(SESSION, JSON.stringify({ userId: S.user.id, token: S.token })); } catch (e) {}
-  }
-  function renderUserChip() {
-    const u = S.user;
-    $('#userChip').innerHTML = `<div class="avatar">${esc(initials(u.displayName))}</div><div style="min-width:0"><div class="n">${esc(u.displayName)}</div><div class="r">${esc(C.USER_ROLES[u.role].label)}</div></div>`;
-    $('#syncState').textContent = S.remote ? 'เชื่อมต่อ Google Sheets' : 'บันทึกในเครื่องนี้';
-    $('#syncState').classList.toggle('online', S.remote);
-  }
-  function showApp() {
-    $('#loginView').hidden = true;
-    $('#appView').hidden = false;
-    renderUserChip();
-    hydrateIcons();
-    updateThemeIcon();
-    render();
-  }
-  function showLogin() {
-    $('#appView').hidden = true;
-    $('#loginView').hidden = false;
-    hydrateIcons();
-    updateThemeIcon();
-    const demo = !S.remote && S.data && S.data.settings.demo;
-    $('#loginHint').innerHTML = S.remote ? 'เชื่อมต่อฐานข้อมูล Google Sheets' : demo
-      ? 'บัญชีทดลอง: <code>admin</code> / <code>admin1234</code> · <code>chair</code> / <code>chair1234</code> · <code>lecturer</code> / <code>lecturer1234</code> · <code>exec</code> / <code>exec1234</code>'
-      : 'ข้อมูลเก็บในเบราว์เซอร์ของเครื่องนี้';
-    $('#loginForm').username.focus();
-  }
-  function logout() {
-    if (S.remote && S.token) api('logout').catch(() => {});
-    S.user = null; S.token = null;
-    try { sessionStorage.removeItem(SESSION); } catch (e) {}
-    boot();
-  }
-
-  $('#loginForm').addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const f = ev.target;
-    const username = f.username.value.trim().toLowerCase();
-    const err = $('#loginError');
-    err.hidden = true;
-    const btn = $('button[type=submit]', f);
-    btn.disabled = true;
-    try {
-      const passwordHash = await hashPw(username, f.password.value);
-      if (S.remote) {
-        const r = await api('login', { username, passwordHash });
-        S.token = r.token; S.user = r.user; S.data = normalize(r.data);
-      } else {
-        const u = S.data.users.find((x) => x.username === username);
-        if (!u || u.passwordHash !== passwordHash) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
-        S.user = u;
-      }
-      persistSession();
-      f.reset();
-      if (!location.hash) location.hash = '#/dashboard';
-      showApp();
-    } catch (e) {
-      err.textContent = e.message || 'เข้าสู่ระบบไม่สำเร็จ';
-      err.hidden = false;
-    } finally { btn.disabled = false; }
-  });
-
-  async function boot() {
-    S.remote = isGas() || !!apiUrl();
-    let session = null;
-    try { session = JSON.parse(sessionStorage.getItem(SESSION) || 'null'); } catch (e) {}
-    if (S.remote) {
-      if (session && session.token) {
-        try {
-          S.token = session.token;
-          const r = await api('load');
-          S.data = normalize(r.data); S.user = r.user;
-          return showApp();
-        } catch (e) { S.token = null; }
-      }
-      S.data = normalize({});
-      return showLogin();
-    }
-    S.data = loadLocal();
-    if (!S.data) { S.data = normalize(await sampleData()); saveLocal(); }
-    if (session && session.userId) {
-      S.user = byId(S.data.users, session.userId) || null;
-      if (S.user) return showApp();
-    }
-    showLogin();
-  }
-
-  window.addEventListener('hashchange', render);
-  window.addEventListener('storage', (e) => { if (e.key === KEY && !S.remote && S.user) { S.data = loadLocal(); render(); } });
-  boot();
-})();

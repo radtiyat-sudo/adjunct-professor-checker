@@ -1,3 +1,90 @@
+  // ================= Calculations =================
+  const st = () => S.data.settings;
+  const windowStart = () => st().refYear - (st().windowYears - 1);
+  const inWindow = (w) => { const y = toBE(w.year); return y >= windowStart() && y <= st().refYear; };
+  const isExpiring = (w) => toBE(w.year) === windowStart();
+  const isExpired = (w) => toBE(w.year) < windowStart();
+  function weightOf(w) {
+    const c = catOf(w.category);
+    const W = st().weights;
+    if (c.quartile && w.quartile && W[c.id + ':' + w.quartile] != null) return Number(W[c.id + ':' + w.quartile]);
+    return Number(W[c.id] != null ? W[c.id] : c.weight);
+  }
+  const isCountable = (w) => w.status === 'verified' && inWindow(w) && weightOf(w) > 0;
+  const worksOf = (lecId) => S.data.works.filter((w) => w.lecturerId === lecId);
+
+  function requirementFor(l) {
+    const R = st().requirements;
+    if (l.type === 'adjunct') return Object.assign({ key: 'adjunct' }, R.adjunct);
+    const p = byId(S.data.programs, l.programId);
+    const lv = (p && p.level) || 'bachelor';
+    return Object.assign({ key: lv }, R[lv]);
+  }
+
+  function evalLecturer(l) {
+    const req = requirementFor(l);
+    const all = worksOf(l.id);
+    const eligible = (w) => inWindow(w) && weightOf(w) > 0 && (!req.kpaOnly || !!catOf(w.category).kpa);
+    const counted = all.filter((w) => w.status === 'verified' && eligible(w));
+    const pending = all.filter((w) => w.status === 'pending' && eligible(w));
+    const research = (list) => list.filter((w) => typeOf(w.type).research).length;
+    const meets = (list) => list.length >= req.minWorks && research(list) >= (req.minResearch || 0);
+    let status = 'fail';
+    if (meets(counted)) status = 'pass';
+    else if (meets(counted.concat(pending))) status = 'pending';
+    const inWin = all.filter(inWindow);
+    return {
+      req, all, counted, pending, status,
+      research: research(counted),
+      weight: counted.reduce((s, w) => s + weightOf(w), 0),
+      noWorks: inWin.length === 0,
+      expiring: counted.filter(isExpiring),
+    };
+  }
+  const STATUS_META = {
+    pass: { label: 'ผ่านเกณฑ์', tone: 'success', icon: 'checkc' },
+    pending: { label: 'รอรับรองผลงาน', tone: 'warning', icon: 'hourglass' },
+    fail: { label: 'ยังไม่ผ่านเกณฑ์', tone: 'danger', icon: 'xc' },
+  };
+
+  // ตัวบ่งชี้ผลงานวิชาการของอาจารย์ผู้รับผิดชอบหลักสูตร (ร้อยละผลรวมถ่วงน้ำหนัก แปลงเป็นคะแนนเต็ม 5)
+  function evalProgram(p, mode) {
+    mode = mode || 'year';
+    const lecs = S.data.lecturers.filter((l) => l.programId === p.id && l.active !== false);
+    const responsible = lecs.filter((l) => l.type === 'responsible');
+    const ids = new Set(responsible.map((l) => l.id));
+    const works = S.data.works.filter((w) => ids.has(w.lecturerId) && w.status === 'verified' && weightOf(w) > 0 &&
+      (mode === 'year' ? toBE(w.year) === st().refYear : inWindow(w)));
+    const sum = works.reduce((s, w) => s + weightOf(w), 0);
+    const n = responsible.length;
+    const pct = n ? (sum / n) * 100 : 0;
+    const target = Number(st().targets[p.level || 'bachelor']) || 20;
+    const score = Math.min(5, (pct / target) * 5);
+    const evals = lecs.map((l) => ({ l, e: evalLecturer(l) }));
+    return { lecs, responsible, works, sum, n, pct, target, score, evals, passCount: evals.filter((x) => x.e.status === 'pass').length };
+  }
+  function scoreBand(s) {
+    if (s >= 4.01) return { label: 'ดีมาก', tone: 'success' };
+    if (s >= 3.01) return { label: 'ดี', tone: 'info' };
+    if (s >= 2.01) return { label: 'ปานกลาง', tone: 'warning' };
+    return { label: 'ต้องปรับปรุง', tone: 'danger' };
+  }
+
+  function buildAlerts() {
+    const lecs = scopeLecturers().filter((l) => l.active !== false);
+    const noWorks = [], failing = [], expiring = [];
+    lecs.forEach((l) => {
+      const e = evalLecturer(l);
+      if (e.noWorks) noWorks.push(l);
+      else if (e.status === 'fail') failing.push({ l, e });
+      if (e.expiring.length) expiring.push({ l, e });
+    });
+    const pending = scopeWorks().filter((w) => w.status === 'pending');
+    const rejected = scopeWorks().filter((w) => w.status === 'rejected');
+    const expired = scopeWorks().filter(isExpired);
+    return { noWorks, failing, expiring, pending, rejected, expired };
+  }
+
   // ================= UI primitives =================
   function toast(msg, kind) {
     const el = document.createElement('div');
@@ -98,7 +185,8 @@
     ];
     $('#nav').innerHTML = groups.map(([g, keys]) => {
       const links = keys.filter((k) => !ROUTES[k].allow || ROUTES[k].allow()).map((k) => {
-        const count = k === 'verify' && pending ? `<span class="count">${pending}</span>` : '';
+        const n = k === 'verify' ? pending : k === 'admin' ? pendingUsers().length : 0;
+        const count = n ? `<span class="count">${n}</span>` : '';
         return `<a href="#/${k}" data-route="${k}">${ic(ROUTES[k].icon)}${esc(ROUTES[k].title)}${count}</a>`;
       }).join('');
       return links ? `<div class="nav-sep">${g}</div>${links}` : '';
@@ -159,6 +247,7 @@
     if (A.expiring.length) alertBlocks.push(`<div class="alert tone-warning">${ic('clock')}<div><b>ผลงานใกล้หมดอายุ ${s.windowYears} ปี (ตีพิมพ์ปี ${windowStart()} — จะไม่นับในปี ${s.refYear + 1})</b>${A.expiring.slice(0, 6).map(({ l, e }) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a> (${e.expiring.length} เรื่อง)`).join(', ')}</div></div>`);
     if (A.failing.length) alertBlocks.push(`<div class="alert tone-danger">${ic('alert')}<div><b>อาจารย์ที่ผลงานยังไม่ถึงเกณฑ์ขั้นต่ำ (${A.failing.length} ท่าน)</b>${A.failing.slice(0, 6).map(({ l, e }) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a> (${e.counted.length}/${e.req.minWorks})`).join(', ')}</div></div>`);
     if (A.pending.length && (isAdmin() || role() === 'chair')) alertBlocks.push(`<div class="alert tone-info">${ic('hourglass')}<div><b>ผลงานรอตรวจรับรอง ${A.pending.length} รายการ</b><a href="#/verify">ไปที่หน้าตรวจรับรองผลงาน →</a></div></div>`);
+    if (pendingUsers().length) alertBlocks.push(`<div class="alert tone-info">${ic('user')}<div><b>คำขอสมัครใช้งานรออนุมัติ ${pendingUsers().length} รายการ</b><a href="#/admin" data-action="tab" data-tab="admin" data-value="users">ตรวจสอบและกำหนดสิทธิ์ →</a></div></div>`);
     if (A.rejected.length) alertBlocks.push(`<div class="alert tone-danger">${ic('edit')}<div><b>ผลงานถูกส่งกลับแก้ไข ${A.rejected.length} รายการ</b><a href="#/works?status=rejected" data-action="filter-works" data-status="rejected">ดูรายการ →</a></div></div>`);
     if (A.expired.length) alertBlocks.push(`<div class="alert tone-neutral">${ic('info')}<div><b>ผลงานเกิน ${s.windowYears} ปี ${A.expired.length} รายการ</b>ไม่ถูกนำมาคิดคะแนนในปีประเมิน ${s.refYear} (ยังเก็บไว้เป็นประวัติ)</div></div>`);
 
