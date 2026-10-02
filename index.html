@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="th" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ระบบติดตามผลงานวิชาการ | วิทยาลัยสงฆ์นครพนม</title>
+  <meta name="description" content="ระบบกำกับติดตามผลงานวิชาการอาจารย์ประจำหลักสูตร วิทยาลัยสงฆ์นครพนม มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย ตามประกาศ ก.พ.อ. พ.ศ. 2562">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem('npc.theme') || 'auto'; } catch (e) {}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">ข้ามไปยังเนื้อหา</a>
+
+  <!-- หน้าเข้าสู่ระบบ -->
+  <section class="login" id="loginView" hidden>
+    <div class="login-card card">
+      <div class="brand brand-login">
+        <div class="brand-logo" aria-hidden="true" data-icon="cap"></div>
+        <div>
+          <div class="brand-title">ระบบติดตามผลงานวิชาการ</div>
+          <div class="brand-sub">วิทยาลัยสงฆ์นครพนม · มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย</div>
+        </div>
+      </div>
+      <form id="loginForm" class="stack" autocomplete="on">
+        <label class="field"><span>ชื่อผู้ใช้</span><input name="username" required autocomplete="username"></label>
+        <label class="field"><span>รหัสผ่าน</span><input name="password" type="password" required autocomplete="current-password"></label>
+        <div class="login-error" id="loginError" role="alert" hidden></div>
+        <button class="btn primary" type="submit">เข้าสู่ระบบ</button>
+      </form>
+      <div class="login-hint" id="loginHint"></div>
+      <button class="icon-btn login-theme" data-action="toggle-theme" aria-label="สลับโหมดมืด/สว่าง"><span data-icon="sun"></span></button>
+    </div>
+  </section>
+
+  <div class="layout" id="appView" hidden>
+    <aside class="sidebar" id="sidebar" aria-label="เมนูหลัก">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true" data-icon="cap"></div>
+        <div>
+          <div class="brand-title">ระบบติดตามผลงานวิชาการ</div>
+          <div class="brand-sub">วิทยาลัยสงฆ์นครพนม · มจร.</div>
+        </div>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-foot">
+        <div class="sync-state" id="syncState">บันทึกในเครื่องนี้</div>
+      </div>
+    </aside>
+
+    <div class="main-wrap">
+      <header class="topbar">
+        <button class="icon-btn only-mobile" id="menuBtn" aria-label="เปิดเมนู"><span data-icon="menu"></span></button>
+        <div class="topbar-title" id="pageTitle"></div>
+        <div class="topbar-actions">
+          <label class="global-search">
+            <span data-icon="search"></span>
+            <input id="globalSearch" type="search" placeholder="ค้นหาอาจารย์ / ผลงาน…" autocomplete="off" aria-label="ค้นหา">
+            <div class="search-pop" id="searchPop" hidden></div>
+          </label>
+          <button class="icon-btn" data-action="toggle-theme" aria-label="สลับโหมดมืด/สว่าง" title="สลับโหมดมืด/สว่าง"><span data-icon="sun"></span></button>
+          <div class="user-chip" id="userChip"></div>
+          <button class="icon-btn" data-action="logout" aria-label="ออกจากระบบ" title="ออกจากระบบ"><span data-icon="logout"></span></button>
+        </div>
+      </header>
+      <main id="main" class="content" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <div class="scrim" id="scrim" hidden></div>
+  <dialog id="modal" class="modal"></dialog>
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+  <script src="assets/criteria.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
