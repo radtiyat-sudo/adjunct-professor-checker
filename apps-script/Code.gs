@@ -67,7 +67,7 @@ function doGet(e) {
 }
 
 // จำนวนไฟล์ app1…appN (ตรงกับผลจาก tools/build_gas.py)
-var APP_PARTS = 8;
+var APP_PARTS = 9;
 
 // รวมไฟล์ย่อย (css, criteria, app1, app2, …) เข้าในหน้า index
 function include(name) {
@@ -103,6 +103,12 @@ function handle(req) {
       case 'remove': removeRecord(user, req.entity, req.id); return { ok: true };
       case 'replaceAll': replaceAll(user, req.data); return { ok: true };
       case 'logout': CacheService.getScriptCache().remove('t_' + req.token); return { ok: true };
+      case 'openalex': return { ok: true, data: openalex(req.path) };
+      case 'journalsClassify': return { ok: true, map: journalsClassify(req.issns || []) };
+      case 'journalsStats': return { ok: true, stats: journalsStats() };
+      case 'journalsImport':
+        if (user.role !== 'admin') throw new Error('เฉพาะผู้ดูแลระบบ');
+        return { ok: true, count: journalsImport(req.category, req.rows || [], !!req.replace) };
       default: throw new Error('ไม่รู้จักคำสั่ง ' + req.action);
     }
   } catch (err) {
@@ -271,6 +277,55 @@ function writeSettings(s) {
 
 function byId(entity, id) { return readAll(entity).filter(function (x) { return x.id === id; })[0]; }
 
+// ---------------- ค้นผลงานออนไลน์ (OpenAlex) ----------------
+function openalex(path) {
+  path = String(path || '');
+  if (!/^\/(authors|works)\?[\w\-.:=&%,*|]+$/.test(path)) throw new Error('คำค้นไม่ถูกต้อง');
+  var res = UrlFetchApp.fetch('https://api.openalex.org' + path, { muteHttpExceptions: true, headers: { Accept: 'application/json' } });
+  if (res.getResponseCode() !== 200) throw new Error('ฐานข้อมูลออนไลน์ตอบกลับผิดพลาด (' + res.getResponseCode() + ')');
+  return JSON.parse(res.getContentText());
+}
+
+// ---------------- ฐานรายชื่อวารสาร (ชีต Journals: issn | category | title) ----------------
+var JOURNAL_PRI = { tci2: 1, tci1: 2, scopus: 3 };
+function journalsSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('Journals');
+  if (!sh) { sh = ss.insertSheet('Journals'); sh.getRange(1, 1, 1, 3).setValues([['issn', 'category', 'title']]); }
+  return sh;
+}
+function journalsMap() {
+  var values = journalsSheet().getDataRange().getValues();
+  var map = {};
+  for (var i = 1; i < values.length; i++) if (values[i][0]) map[values[i][0]] = { category: values[i][1], title: values[i][2] };
+  return map;
+}
+function journalsClassify(issns) {
+  var map = journalsMap(), out = {};
+  issns.slice(0, 5000).forEach(function (i) { if (map[i]) out[i] = map[i].category; });
+  return out;
+}
+function journalsStats() {
+  var map = journalsMap(), stats = {};
+  Object.keys(map).forEach(function (k) { var c = map[k].category; stats[c] = (stats[c] || 0) + 1; });
+  return stats;
+}
+function journalsImport(category, rows, replace) {
+  if (!JOURNAL_PRI[category]) throw new Error('กลุ่มวารสารไม่ถูกต้อง');
+  var map = journalsMap();
+  if (replace) Object.keys(map).forEach(function (k) { if (map[k].category === category) delete map[k]; });
+  rows.forEach(function (r) {
+    var issn = String(r.issn || '');
+    if (!/^\d{4}-\d{3}[\dX]$/.test(issn)) return;
+    if (!map[issn] || JOURNAL_PRI[category] > JOURNAL_PRI[map[issn].category]) map[issn] = { category: category, title: String(r.title || '').slice(0, 200) };
+  });
+  var sh = journalsSheet();
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 3).clearContent();
+  var out = Object.keys(map).map(function (k) { return [k, map[k].category, map[k].title]; });
+  if (out.length) sh.getRange(2, 1, out.length, 3).setValues(out);
+  return rows.length;
+}
+
 // ---------------- permissions ----------------
 function lecturerProgram(lecturerId) { var l = byId('lecturers', lecturerId); return l ? l.programId : null; }
 
@@ -278,6 +333,8 @@ function assertCan(user, entity, rec, existing) {
   var r = user.role;
   if (r === 'admin') return;
   var deny = function () { throw new Error('ไม่มีสิทธิ์ดำเนินการนี้'); };
+  // โหมดผู้ดูแลระบบจัดการคนเดียว (ค่าเริ่มต้น): บทบาทอื่นแก้ไขข้อมูลไม่ได้
+  if (readSettings().adminOnlyEdit !== false) throw new Error('เฉพาะผู้ดูแลระบบเท่านั้นที่แก้ไขข้อมูลได้');
   if (r === 'executive') deny();
   if (entity === 'users' || entity === 'programs' || entity === 'settings') deny();
   if (entity === 'externals') { if (r !== 'chair') deny(); return; }

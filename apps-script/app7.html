@@ -1,205 +1,230 @@
-  // ================= Event handlers =================
-  const ACTIONS = {
-    'toggle-theme': () => {
-      const cur = document.documentElement.dataset.theme;
-      const dark = cur === 'dark' || (cur === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-      const next = dark ? 'light' : 'dark';
-      document.documentElement.dataset.theme = next;
-      try { localStorage.setItem('mugr.theme', next); } catch (e) {}
-      updateThemeIcon();
-    },
-    logout: () => { logout(); },
-    print: () => window.print(),
-    tab: (el) => { view.tabs[el.dataset.tab] = el.dataset.value; if (el.tagName === 'A' && el.getAttribute('href') !== location.hash) return; render(); },
-    'filter-works': (el, ev) => { ev.preventDefault(); workFilters().status = el.dataset.status; location.hash = '#/works'; render(); },
-    'add-work': (el) => openWorkForm(null, el.dataset.lecturer),
-    'edit-work': (el) => openWorkForm(byId(S.data.works, el.dataset.id)),
-    'view-work': (el) => { const w = byId(S.data.works, el.dataset.id); hydrateIcons(openModal({ title: 'รายละเอียดผลงาน', wide: true, body: workDetailHtml(w) })); },
-    'verify-work': (el) => openVerify(byId(S.data.works, el.dataset.id)),
-    'delete-work': async (el) => {
-      const w = byId(S.data.works, el.dataset.id);
-      if (await confirmBox('ลบผลงาน', `ต้องการลบผลงาน “${esc(w.title)}” ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้`, 'ลบผลงาน')) { await remove('works', w.id); toast('ลบผลงานแล้ว'); render(); }
-    },
-    'add-lecturer': () => openLecturerForm(null),
-    'edit-lecturer': (el) => openLecturerForm(byId(S.data.lecturers, el.dataset.id)),
-    'delete-lecturer': async (el) => {
-      const l = byId(S.data.lecturers, el.dataset.id);
-      const n = worksOf(l.id).length;
-      if (await confirmBox('ลบข้อมูลอาจารย์', `ต้องการลบ “${esc(lecturerName(l))}”${n ? ` และผลงานที่เกี่ยวข้อง ${n} รายการ` : ''} ใช่หรือไม่? <br><span class="muted small">หากอาจารย์ลาออก แนะนำให้แก้ไขเป็น “ไม่ปฏิบัติงาน” แทนเพื่อเก็บประวัติ</span>`, 'ลบ')) {
-        for (const w of worksOf(l.id)) await remove('works', w.id);
-        await remove('lecturers', l.id); toast('ลบข้อมูลอาจารย์แล้ว'); location.hash = '#/lecturers'; render();
+  // ================= Pages: Admin =================
+  function renderAdmin() {
+    const tab = view.tabs.admin || 'users';
+    const T = (k, label) => `<button class="${tab === k ? 'active' : ''}" data-action="tab" data-tab="admin" data-value="${k}">${label}</button>`;
+    let body = '';
+    if (tab === 'users') body = adminUsers();
+    if (tab === 'settings') body = adminSettings();
+    if (tab === 'data') body = adminData();
+    if (tab === 'connect') body = adminConnect();
+    return `<div class="page-head"><div><h1>จัดการระบบ</h1><p>ผู้ใช้งาน เกณฑ์การประเมิน การสำรองข้อมูล และการเชื่อมต่อ Google Sheets</p></div></div>
+      <div class="tabs">${T('users', 'ผู้ใช้งาน')}${T('settings', 'ตั้งค่าเกณฑ์')}${T('data', 'ข้อมูล')}${T('connect', 'การเชื่อมต่อ')}</div>${body}`;
+  }
+
+  function adminUsers() {
+    const reqs = S.data.users.filter((u) => u.status === 'pending').sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    const reqLabel = (r) => (C.USER_ROLES[r] || { label: '—' }).label;
+    const reqCard = `<div class="card mb"><div class="card-head"><h2>${ic('user')} คำขอสมัครใช้งาน (${reqs.length})</h2><span class="muted small">ผู้ใช้สมัครด้วยอีเมลที่หน้าเข้าสู่ระบบ</span></div>
+      ${reqs.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>ผู้สมัคร</th><th>บทบาทที่ขอ</th><th>หลักสูตร</th><th>หมายเหตุ</th><th>วันที่สมัคร</th><th></th></tr></thead><tbody>
+        ${reqs.map((u) => `<tr><td><div class="cell-title">${esc(u.displayName)}</div><div class="cell-sub">${esc(u.email || u.username)}</div></td>
+          <td>${chip(reqLabel(u.requestedRole), (C.USER_ROLES[u.requestedRole] || { tone: 'neutral' }).tone)}</td>
+          <td>${u.requestedProgramId ? esc(programName(u.requestedProgramId)) : '<span class="muted">—</span>'}</td>
+          <td class="cell-sub">${esc(u.requestNote || '—')}</td><td class="cell-sub">${fmtDate(u.createdAt)}</td>
+          <td class="actions"><button class="btn sm primary" data-action="approve-user" data-id="${u.id}">${ic('check')}อนุมัติ</button><button class="btn sm danger" data-action="reject-user" data-id="${u.id}">ไม่อนุมัติ</button></td></tr>`).join('')}
+        </tbody></table></div>` : `<div class="card-body muted small">ไม่มีคำขอที่รออนุมัติ · ผู้ใช้ใหม่สมัครได้ที่แท็บ “สมัครใช้งานด้วยอีเมล” ในหน้าเข้าสู่ระบบ</div>`}</div>`;
+    const users = S.data.users.filter((u) => u.status !== 'pending');
+    const rows = users.map((u) => `<tr><td><div class="person-cell"><div class="avatar sm">${esc(initials(u.displayName))}</div><div><div class="cell-title">${esc(u.displayName)}</div><div class="cell-sub">${esc(u.email || u.username)}</div></div></div></td>
+      <td>${chip(roleMeta(u).label, roleMeta(u).tone)}</td>
+      <td>${u.role === 'chair' ? esc(programName(u.programId)) : u.role === 'lecturer' ? esc(lecturerName(byId(S.data.lecturers, u.lecturerId))) : '<span class="muted">ทั้งบัณฑิตวิทยาลัย</span>'}</td>
+      <td class="actions"><button class="btn sm" data-action="edit-user" data-id="${u.id}">${ic('edit')}</button>${u.id !== S.user.id ? `<button class="btn sm danger" data-action="delete-user" data-id="${u.id}">${ic('trash')}</button>` : ''}</td></tr>`).join('');
+    return `${reqCard}<div class="card"><div class="card-head"><h2>${ic('users')} บัญชีผู้ใช้งาน (${users.length})</h2><button class="btn primary sm" data-action="add-user">${ic('plus')}เพิ่มผู้ใช้</button></div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>ผู้ใช้</th><th>บทบาท</th><th>ขอบเขตข้อมูล</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }
+
+  function openUserForm(u, approving) {
+    const editing = !!u;
+    u = u || { role: 'lecturer' };
+    // ตอนอนุมัติ: ตั้งค่าเริ่มต้นตามที่ผู้สมัครขอ และจับคู่อาจารย์จากอีเมลให้อัตโนมัติ
+    const initRole = approving ? (u.requestedRole || 'lecturer') : u.role;
+    const initProgram = approving ? (u.requestedProgramId || '') : u.programId;
+    const matchLec = approving && u.email ? S.data.lecturers.find((l) => String(l.email || '').toLowerCase() === u.email) : null;
+    const initLecturer = approving ? (matchLec ? matchLec.id : '') : u.lecturerId;
+    const form = openModal({
+      title: approving ? 'อนุมัติคำขอและกำหนดสิทธิ์' : editing ? 'แก้ไขผู้ใช้งาน' : 'เพิ่มผู้ใช้งาน',
+      submitLabel: approving ? 'อนุมัติและเปิดใช้งาน' : 'บันทึก',
+      body: `${approving ? `<div class="alert tone-info mb">${ic('info')}<div><b>${esc(u.displayName)} · ${esc(u.email)}</b>ขอสิทธิ์: ${esc((C.USER_ROLES[u.requestedRole] || { label: '—' }).label)}${u.requestNote ? ' · ' + esc(u.requestNote) : ''}</div></div>` : ''}
+        <div class="form-grid">
+        <label class="field"><span>ชื่อผู้ใช้ (Username) <em>*</em></span><input name="username" required value="${esc(u.username)}" ${editing ? 'readonly' : ''} pattern="[A-Za-z0-9._@+\-]{3,}" title="อย่างน้อย 3 ตัว (a-z, 0-9, . _ - @)"></label>
+        <label class="field"><span>ชื่อที่แสดง <em>*</em></span><input name="displayName" required value="${esc(u.displayName)}"></label>
+        <label class="field"><span>อีเมล</span><input name="email" type="email" value="${esc(u.email)}" ${u.email && editing ? 'readonly' : ''}></label>
+        <label class="field"><span>บทบาท</span><select name="role" data-role-select>${Object.entries(C.USER_ROLES).map(([k, v]) => opt(k, v.label, initRole)).join('')}</select></label>
+        <label class="field"><span>รหัสผ่าน ${editing ? '<small>(เว้นว่างหากไม่เปลี่ยน)</small>' : '<em>*</em>'}</span><input name="password" type="password" minlength="6" ${editing ? '' : 'required'} autocomplete="new-password"></label>
+        ${editing && !approving && u.id !== S.user.id ? `<label class="field"><span>สถานะบัญชี</span><select name="status">${opt('active', 'ใช้งานได้', u.status || 'active')}${opt('disabled', 'ระงับการใช้งาน', u.status)}${u.status === 'rejected' ? opt('rejected', 'ไม่อนุมัติ', u.status) : ''}</select></label>` : ''}
+        <label class="field full" data-for="chair"><span>หลักสูตรที่ดูแล</span><select name="programId"><option value="">— เลือก —</option>${S.data.programs.map((p) => opt(p.id, p.name, initProgram)).join('')}</select></label>
+        <label class="field full" data-for="lecturer"><span>ผูกกับรายชื่ออาจารย์${matchLec ? ' <small>(จับคู่จากอีเมลอัตโนมัติ)</small>' : ''}</span><select name="lecturerId"><option value="">— เลือก —</option>${S.data.lecturers.map((l) => opt(l.id, lecturerName(l) + ' · ' + programName(l.programId), initLecturer)).join('')}</select></label>
+      </div>`,
+      onSubmit: async (v) => {
+        const username = v.username.trim().toLowerCase();
+        const email = String(v.email || '').trim().toLowerCase();
+        if (!editing && S.data.users.some((x) => x.username === username)) throw new Error('ชื่อผู้ใช้นี้มีอยู่แล้ว');
+        if (email && !EMAIL_RE.test(email)) throw new Error('รูปแบบอีเมลไม่ถูกต้อง');
+        if (email && S.data.users.some((x) => x.id !== u.id && x.email === email)) throw new Error('อีเมลนี้ถูกใช้กับบัญชีอื่นแล้ว');
+        if (v.role === 'chair' && !v.programId) throw new Error('กรุณาเลือกหลักสูตรของประธานหลักสูตร');
+        if (v.role === 'lecturer' && !v.lecturerId) throw new Error('กรุณาผูกบัญชีกับรายชื่ออาจารย์');
+        const rec = Object.assign({}, u, { id: u.id || uid('u'), username, email, displayName: v.displayName.trim(), role: v.role,
+          programId: v.role === 'chair' ? v.programId : '', lecturerId: v.role === 'lecturer' ? v.lecturerId : '' });
+        if (approving) Object.assign(rec, { status: 'active', approvedBy: S.user.displayName || S.user.username, approvedAt: new Date().toISOString() });
+        else if (v.status) rec.status = v.status;
+        else if (!rec.status) rec.status = 'active';
+        if (v.password) rec.passwordHash = await hashPw(username, v.password);
+        await upsert('users', rec);
+        if (rec.id === S.user.id) { S.user = rec; renderUserChip(); }
+        toast(approving ? `อนุมัติแล้ว — ${rec.displayName} เข้าสู่ระบบด้วย ${rec.username} ได้ทันที` : 'บันทึกผู้ใช้งานแล้ว');
+        render();
+      },
+    });
+    const sync = () => { const r = form.role.value; $$('[data-for]', form).forEach((el) => { el.hidden = el.dataset.for !== r; }); };
+    form.role.addEventListener('change', sync); sync();
+  }
+
+  function adminSettings() {
+    const s = st();
+    const W = s.weights;
+    const wRows = C.CATEGORIES.map((c) => {
+      const base = `<tr><td>${esc(c.label)}</td><td><input class="input" style="width:90px;height:34px" type="number" step="0.05" min="0" max="2" name="w:${c.id}" value="${W[c.id]}"></td><td>${c.quartile ? C.QUARTILES.map((q) => `<label class="small" style="display:inline-flex;gap:4px;align-items:center;margin-right:8px">${q}<input class="input" style="width:72px;height:34px" type="number" step="0.05" min="0" max="2" name="w:${c.id}:${q}" value="${W[c.id + ':' + q]}"></label>`).join('') : '<span class="muted">—</span>'}</td></tr>`;
+      return base;
+    }).join('');
+    const R = s.requirements;
+    const reqRow = (k, label) => `<tr><td>${label}</td><td><input class="input" style="width:80px;height:34px" type="number" min="0" name="r:${k}:minWorks" value="${R[k].minWorks}"></td><td><input class="input" style="width:80px;height:34px" type="number" min="0" name="r:${k}:minResearch" value="${R[k].minResearch || 0}"></td></tr>`;
+    return `<form id="settingsForm" class="stack">
+      <div class="card"><div class="card-head"><h2>${ic('gear')} ข้อมูลทั่วไปและรอบประเมิน</h2></div><div class="card-body"><div class="form-grid">
+        <label class="field"><span>ชื่อหน่วยงาน</span><input name="collegeName" value="${esc(s.collegeName)}"></label>
+        <label class="field"><span>มหาวิทยาลัย</span><input name="university" value="${esc(s.university)}"></label>
+        <label class="field"><span>ปีประเมิน (พ.ศ.)</span><input name="refYear" type="number" min="2500" max="2700" value="${s.refYear}"></label>
+        <label class="field"><span>ช่วงนับผลงานย้อนหลัง (ปี)</span><input name="windowYears" type="number" min="1" max="20" value="${s.windowYears}"></label>
+        <label class="field"><span>ร้อยละเป้าหมาย ป.ตรี (= 5 คะแนน)</span><input name="t:bachelor" type="number" min="1" value="${s.targets.bachelor}"></label>
+        <label class="field"><span>ร้อยละเป้าหมาย ป.โท</span><input name="t:master" type="number" min="1" value="${s.targets.master}"></label>
+        <label class="field"><span>ร้อยละเป้าหมาย ป.เอก</span><input name="t:phd" type="number" min="1" value="${s.targets.phd}"></label>
+        <label class="check full"><input type="checkbox" name="adminOnlyEdit" ${s.adminOnlyEdit !== false ? 'checked' : ''}> ผู้ดูแลระบบเป็นผู้จัดการข้อมูลคนเดียว — ประธานหลักสูตร อาจารย์ และผู้บริหาร ดูข้อมูลได้อย่างเดียว (ยกเลิกเพื่อให้ประธานหลักสูตร/อาจารย์ บันทึกและตรวจรับรองผลงานของหลักสูตรตนเองได้)</label>
+        <label class="field full"><span>อีเมลผู้ดูแลระบบ <small>(สมัครด้วยอีเมลเหล่านี้จะได้สิทธิ์ Admin ทันทีโดยไม่ต้องรออนุมัติ · บรรทัดละ 1 อีเมล)</small></span>
+          <textarea name="adminEmails" rows="3" placeholder="name@mahidol.ac.th">${esc((s.adminEmails || []).join('\n'))}</textarea></label>
+      </div></div></div>
+      <div class="card"><div class="card-head"><h2>${ic('users')} เกณฑ์ผลงานขั้นต่ำของอาจารย์ (ในช่วงนับผลงาน)</h2></div><div class="table-wrap"><table class="table"><thead><tr><th>กลุ่ม</th><th>จำนวนผลงานขั้นต่ำ</th><th>เป็นงานวิจัยอย่างน้อย</th></tr></thead><tbody>
+        ${reqRow('bachelor', 'อาจารย์ในหลักสูตรปริญญาตรี')}${reqRow('master', 'อาจารย์ในหลักสูตรปริญญาโท')}${reqRow('phd', 'อาจารย์ในหลักสูตรปริญญาเอก')}${reqRow('adjunct', 'อาจารย์พิเศษ (นับเฉพาะวารสารตามประกาศ ก.พ.อ.)')}
+      </tbody></table></div></div>
+      <div class="card"><div class="card-head"><h2>${ic('chart')} ค่าน้ำหนักผลงาน</h2><button type="button" class="btn sm" data-action="reset-weights">${ic('refresh')}คืนค่าเริ่มต้น</button></div><div class="table-wrap"><table class="table"><thead><tr><th>ประเภท</th><th>ค่าน้ำหนัก</th><th>แยกตาม Quartile</th></tr></thead><tbody>${wRows}</tbody></table></div></div>
+      <div class="btn-row"><button class="btn primary" type="submit">${ic('check')}บันทึกการตั้งค่า</button></div></form>`;
+  }
+
+  function adminData() {
+    const d = S.data;
+    return `<div class="grid two">
+      <div class="card"><div class="card-head"><h2>${ic('download')} สำรองข้อมูล</h2></div><div class="card-body"><p class="muted" style="margin-top:0">ดาวน์โหลดข้อมูลทั้งหมด (หลักสูตร ${d.programs.length} · อาจารย์ ${d.lecturers.length} · ผลงาน ${d.works.length} · บุคคลภายนอก ${d.externals.length} · ผู้ใช้ ${d.users.length}) เป็นไฟล์ JSON</p>
+        <div class="btn-row"><button class="btn primary" data-action="backup">${ic('download')}ดาวน์โหลดไฟล์สำรอง</button><button class="btn" data-action="export-csv">${ic('download')}ผลงาน (CSV)</button></div></div></div>
+      <div class="card"><div class="card-head"><h2>${ic('upload')} กู้คืนข้อมูล</h2></div><div class="card-body"><p class="muted" style="margin-top:0">นำเข้าไฟล์ JSON ที่สำรองไว้ — ข้อมูลปัจจุบันจะถูกแทนที่ทั้งหมด</p>
+        <label class="btn">${ic('upload')}เลือกไฟล์ .json<input type="file" accept="application/json,.json" data-action="restore" hidden></label></div></div>
+      <div class="card"><div class="card-head"><h2>${ic('refresh')} ข้อมูลเริ่มต้น</h2></div><div class="card-body"><p class="muted" style="margin-top:0">โหลดข้อมูลตัวอย่าง (หลักสูตร อาจารย์ ผลงาน และบัญชีทดลองทุกบทบาท) เพื่อทดลองระบบ หรือเริ่มระบบใหม่โดยเหลือเฉพาะบัญชีผู้ดูแลระบบ</p>
+        <div class="btn-row"><button class="btn" data-action="load-sample">โหลดข้อมูลตัวอย่าง</button><button class="btn danger" data-action="clear-data">${ic('trash')}ล้างข้อมูลทั้งหมด</button></div></div></div>
+      ${journalsCard()}
+    </div>`;
+  }
+
+  function adminConnect() {
+    if (isGas()) {
+      return `<div class="card"><div class="card-head"><h2>${ic('link')} เชื่อมต่อฐานข้อมูล Google Sheets</h2>${chip('เชื่อมต่อแล้ว', 'success', true)}</div>
+        <div class="card-body"><p style="margin-top:0">ระบบเปิดจาก Apps Script จึงเชื่อมกับ Google Sheet ของโปรเจกต์นี้โดยอัตโนมัติ ไม่ต้องตั้งค่า URL</p>
+        <div class="btn-row"><button type="button" class="btn" data-action="push-remote">${ic('upload')}นำเข้าข้อมูลจากไฟล์สำรอง (.json)</button></div>
+        <p class="small muted">ข้อมูลทั้งหมดอยู่ในชีต Programs, Lecturers, Works, Users, Externals และ Settings · สิทธิ์ถูกตรวจสอบที่ฝั่งเซิร์ฟเวอร์</p></div></div>`;
+    }
+    const url = apiUrl();
+    return `<div class="card"><div class="card-head"><h2>${ic('link')} เชื่อมต่อฐานข้อมูล Google Sheets</h2>${S.remote ? chip('เชื่อมต่อแล้ว', 'success', true) : chip('เก็บในเครื่องนี้', 'neutral', true)}</div>
+      <div class="card-body">
+        <ol class="small" style="margin-top:0;padding-left:20px">
+          <li>สร้าง Google Sheet ใหม่ > ส่วนขยาย > Apps Script แล้ววางโค้ดจากไฟล์ <code>apps-script/Code.gs</code> ใน repository</li>
+          <li>รันฟังก์ชัน <code>setup</code> หนึ่งครั้ง (สร้างชีตและบัญชี admin / รหัสผ่าน admin1234)</li>
+          <li>ทำให้ใช้งานได้ (Deploy) > เว็บแอป > ดำเนินการในฐานะ: ฉัน · ผู้มีสิทธิ์เข้าถึง: ทุกคน แล้วคัดลอก URL มาวางด้านล่าง</li>
+          <li>(ไม่บังคับ) กด "ส่งข้อมูลปัจจุบันขึ้น Sheets" เพื่อย้ายข้อมูลจากเครื่องนี้</li></ol>
+        <form id="apiForm" class="stack" style="gap:10px">
+          <label class="field"><span>URL ของ Apps Script Web App</span><input name="apiUrl" type="url" value="${esc(url)}" placeholder="https://script.google.com/macros/s/…/exec"></label>
+          <div class="btn-row"><button class="btn primary" type="submit">${ic('check')}บันทึกและเชื่อมต่อ</button>${url ? `<button type="button" class="btn danger" data-action="disconnect">ยกเลิกการเชื่อมต่อ</button>` : ''}${S.remote ? `<button type="button" class="btn" data-action="push-remote">${ic('upload')}ส่งข้อมูลจากไฟล์สำรองขึ้น Sheets</button>` : ''}</div>
+        </form>
+        <p class="small muted">เมื่อเชื่อมต่อแล้ว ระบบจะออกจากระบบเพื่อให้เข้าสู่ระบบด้วยบัญชีใน Google Sheets · สิทธิ์การเข้าถึงข้อมูลถูกตรวจสอบที่ฝั่งเซิร์ฟเวอร์</p>
+      </div></div>`;
+  }
+
+  // ================= Sample data =================
+  async function sampleData() {
+    const y = nowBE();
+    const P = [
+      { id: 'p_bio', name: 'วิทยาศาสตรมหาบัณฑิต สาขาวิชาชีวเคมี', degree: 'วท.ม.', level: 'master' },
+      { id: 'p_pharm', name: 'ปรัชญาดุษฎีบัณฑิต สาขาวิชาเภสัชวิทยา', degree: 'ปร.ด.', level: 'phd' },
+      { id: 'p_ph', name: 'สาธารณสุขศาสตรมหาบัณฑิต', degree: 'ส.ม.', level: 'master' },
+      { id: 'p_ling', name: 'ศิลปศาสตรมหาบัณฑิต สาขาวิชาภาษาศาสตร์', degree: 'ศศ.ม.', level: 'master' },
+      { id: 'p_pop', name: 'ปรัชญาดุษฎีบัณฑิต สาขาวิชาประชากรและการพัฒนา', degree: 'ปร.ด.', level: 'phd' },
+    ];
+    const names = [
+      ['ดร.', 'สมชาย ใจดี', 'Somchai Jaidee', 'p_bio', 'ผู้ช่วยศาสตราจารย์'], ['ดร.', 'วิภา รักเรียน', 'Wipa Rakrian', 'p_bio', 'รองศาสตราจารย์'],
+      ['ดร.', 'สุนทร แก้วมณี', 'Sunthon Kaewmanee', 'p_bio', ''], ['ดร.', 'อรุณี ศรีสุข', 'Arunee Srisuk', 'p_bio', ''], ['ดร.', 'อนุชา มั่นคง', 'Anucha Mankong', 'p_bio', ''],
+      ['ดร.', 'ประเสริฐ ทองดี', 'Prasert Thongdee', 'p_pharm', 'รองศาสตราจารย์'], ['ดร.', 'มาลัย ใจงาม', 'Malai Jaingam', 'p_pharm', 'ผู้ช่วยศาสตราจารย์'], ['ดร.', 'วีระ พากเพียร', 'Weera Pakphian', 'p_pharm', ''],
+      ['ดร.', 'ชัยวัฒน์ พรหมมา', 'Chaiwat Phromma', 'p_ph', 'รองศาสตราจารย์'], ['ดร.', 'ธนพล บุญมา', 'Thanaphon Boonma', 'p_ph', ''], ['ดร.', 'สุดา ปัญญาดี', 'Suda Panyadee', 'p_ph', ''],
+      ['ดร.', 'จันทร์เพ็ญ วงศ์ไทย', 'Chanphen Wongthai', 'p_ling', ''], ['Dr.', 'David Miller', 'David Miller', 'p_ling', ''],
+      ['ดร.', 'ปิยะ เจริญสุข', 'Piya Charoensuk', 'p_pop', 'ผู้ช่วยศาสตราจารย์'], ['ดร.', 'กิตติ ศักดิ์สูง', 'Kitti Saksung', 'p_pop', 'รองศาสตราจารย์'], ['ดร.', 'วรรณา คำแสง', 'Wanna Khamsaeng', 'p_pop', ''],
+    ];
+    const L = names.map((n, i) => ({ id: 'l_' + (i + 1), prefix: n[0], nameTh: n[1], nameEn: n[2], programId: n[3], position: n[4], active: true,
+      type: i === 4 || i === 12 ? 'adjunct' : i % 5 === 3 ? 'program' : 'responsible', degree: 'ปร.ด.', email: '' }));
+    const J = {
+      tci1: ['วารสารวิจัยวิทยาศาสตร์สุขภาพ (ตัวอย่าง)', 'วารสารสังคมศาสตร์และประชากร (ตัวอย่าง)', 'วารสารภาษาและวัฒนธรรม (ตัวอย่าง)'],
+      tci2: ['วารสารบัณฑิตศึกษา (ตัวอย่าง)', 'วารสารสหวิทยาการวิจัย (ตัวอย่าง)', 'วารสารสาธารณสุขชุมชน (ตัวอย่าง)'],
+      scopus: ['Journal of Biomedical Research (Sample)', 'Asian Population Studies (Sample)', 'Journal of Language and Linguistics (Sample)'],
+      proc_nat: ['การประชุมวิชาการบัณฑิตศึกษาระดับชาติ (ตัวอย่าง)'], proc_intl: ['International Graduate Research Conference (Sample)'],
+    };
+    const topics = ['ฤทธิ์ต้านอนุมูลอิสระของสารสกัดจากสมุนไพรไทย', 'ปัจจัยที่มีผลต่อพฤติกรรมสุขภาพของผู้สูงอายุในชุมชนเมือง', 'การแสดงออกของยีนที่เกี่ยวข้องกับภาวะดื้อยา',
+      'การย้ายถิ่นของแรงงานและการเปลี่ยนแปลงโครงสร้างประชากร', 'ประสิทธิผลของโปรแกรมส่งเสริมสุขภาพจิตในนักศึกษา', 'Code-switching in Thai Online Discourse',
+      'ภาวะเจริญพันธุ์ต่ำกับนโยบายประชากรของประเทศไทย', 'การพัฒนาระบบนำส่งยาด้วยอนุภาคนาโน', 'Machine Learning for Early Detection of Diabetes', 'การประเมินความเสี่ยงสุขภาพจากฝุ่น PM2.5'];
+    const cats = ['tci1', 'tci2', 'tci2', 'scopus', 'proc_nat', 'tci1', 'proc_intl', 'tci2', 'book', 'tci3'];
+    const W = [];
+    let k = 0;
+    L.forEach((l, i) => {
+      if (i === 7 || i === 10) return; // อาจารย์ที่ยังไม่มีผลงาน (เพื่อทดสอบการแจ้งเตือน)
+      const count = 1 + ((i * 7) % 4);
+      for (let j = 0; j < count; j++) {
+        const cat = cats[(i + j * 3) % cats.length];
+        const year = y - ((i + j * 2) % 7);
+        const status = j === count - 1 && i % 3 === 0 ? 'pending' : (i + j) % 11 === 5 ? 'rejected' : 'verified';
+        const jl = J[cat] || [''];
+        W.push({ id: 'w_' + (++k), lecturerId: l.id, title: topics[(i + j * 3) % topics.length] + (j ? ' (ระยะที่ ' + (j + 1) + ')' : ''), type: cat === 'book' ? 'book' : cat.startsWith('proc') ? 'proceeding' : j % 3 === 2 ? 'academic' : 'research',
+          authorRole: j % 2 ? 'co' : 'first', category: cat, quartile: cat === 'scopus' ? ['Q2', 'Q3', 'Q4'][i % 3] : '', journal: jl[(i + j) % jl.length], issn: '', year, detail: `ปีที่ ${8 + (j % 4)} ฉบับที่ ${1 + (i % 3)}`,
+          doi: '', url: '', note: '', status, createdAt: new Date(Date.now() - (k * 86400000)).toISOString(), createdBy: 'ตัวอย่าง',
+          reviewedBy: status === 'pending' ? '' : 'ผู้ดูแลระบบ', reviewedAt: status === 'pending' ? '' : new Date(Date.now() - k * 43200000).toISOString(),
+          reviewNote: status === 'rejected' ? 'กรุณาแนบลิงก์หลักฐานและตรวจสอบกลุ่มวารสาร TCI' : '' });
       }
-    },
-    'add-external': () => openExternalForm(null),
-    'edit-external': (el) => openExternalForm(byId(S.data.externals, el.dataset.id)),
-    'delete-external': async (el) => {
-      const x = byId(S.data.externals, el.dataset.id);
-      if (await confirmBox('ลบรายชื่อ', `ต้องการลบ “${esc(lecturerName(x))}” และผลการตรวจทั้งหมดใช่หรือไม่?`, 'ลบ')) { await remove('externals', x.id); toast('ลบแล้ว'); location.hash = '#/externals'; }
-    },
-    'add-pub': (el) => openPubForm(byId(S.data.externals, el.dataset.x)),
-    'edit-pub': (el) => { const x = byId(S.data.externals, el.dataset.x); openPubForm(x, (x.pubs || []).find((p) => p.id === el.dataset.id)); },
-    'delete-pub': async (el) => {
-      const x = byId(S.data.externals, el.dataset.x);
-      if (await confirmBox('ลบผลงาน', 'ต้องการลบผลงานนี้ออกจากรายการตรวจใช่หรือไม่?', 'ลบ')) { await upsert('externals', Object.assign({}, x, { pubs: x.pubs.filter((p) => p.id !== el.dataset.id) })); render(); }
-    },
-    'add-program': () => openProgramForm(null),
-    'edit-program': (el) => openProgramForm(byId(S.data.programs, el.dataset.id)),
-    'delete-program': async (el) => {
-      const p = byId(S.data.programs, el.dataset.id);
-      const n = S.data.lecturers.filter((l) => l.programId === p.id).length;
-      if (n) { toast(`ยังมีอาจารย์ในหลักสูตรนี้ ${n} ท่าน กรุณาย้ายหรือลบก่อน`, 'error'); return; }
-      if (await confirmBox('ลบหลักสูตร', `ต้องการลบหลักสูตร “${esc(p.name)}” ใช่หรือไม่?`, 'ลบ')) { await remove('programs', p.id); toast('ลบหลักสูตรแล้ว'); render(); }
-    },
-    'add-user': () => openUserForm(null),
-    'approve-user': (el) => openUserForm(byId(S.data.users, el.dataset.id), true),
-    'reject-user': async (el) => {
-      const u = byId(S.data.users, el.dataset.id);
-      if (await confirmBox('ไม่อนุมัติคำขอ', `ไม่อนุมัติคำขอสมัครใช้งานของ “${esc(u.displayName)}” (${esc(u.email)}) ใช่หรือไม่? ผู้สมัครจะเข้าสู่ระบบไม่ได้`, 'ไม่อนุมัติ')) {
-        await upsert('users', Object.assign({}, u, { status: 'rejected', approvedBy: S.user.displayName || S.user.username, approvedAt: new Date().toISOString() }));
-        toast('บันทึกแล้ว — ไม่อนุมัติคำขอ'); render();
-      }
-    },
-    'edit-user': (el) => openUserForm(byId(S.data.users, el.dataset.id)),
-    'delete-user': async (el) => {
-      const u = byId(S.data.users, el.dataset.id);
-      if (await confirmBox('ลบผู้ใช้งาน', `ต้องการลบบัญชี “${esc(u.username)}” ใช่หรือไม่?`, 'ลบ')) { await remove('users', u.id); toast('ลบผู้ใช้แล้ว'); render(); }
-    },
-    'open-lecturer-report': () => { const id = $('#reportLecturer').value; if (id) location.hash = '#/report/lecturer/' + id; },
-    'export-csv': () => exportCsv(),
-    backup: () => {
-      const data = JSON.parse(JSON.stringify(S.data));
-      download(`backup_ผลงานวิชาการ_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), 'application/json');
-    },
-    'load-sample': async () => {
-      if (!(await confirmBox('โหลดข้อมูลตัวอย่าง', 'ข้อมูลปัจจุบันจะถูกแทนที่ด้วยข้อมูลตัวอย่าง (รวมบัญชีผู้ใช้ทดลอง: admin / admin1234) ต้องการดำเนินการต่อหรือไม่?', 'โหลดข้อมูลตัวอย่าง'))) return;
-      await replaceAll(await sampleData());
-      S.user = S.data.users.find((u) => u.role === 'admin');
-      persistSession(); renderUserChip(); toast('โหลดข้อมูลตัวอย่างแล้ว'); render();
-    },
-    'clear-data': async () => {
-      if (!(await confirmBox('ล้างข้อมูลทั้งหมด', 'หลักสูตร อาจารย์ ผลงาน และผู้ใช้อื่นทั้งหมดจะถูกลบ เหลือเฉพาะบัญชีของคุณ แนะนำให้สำรองข้อมูลก่อน', 'ล้างข้อมูล'))) return;
-      const s = Object.assign({}, S.data.settings); delete s.demo;
-      await replaceAll({ programs: [], lecturers: [], works: [], externals: [], users: [S.user], settings: s });
-      toast('ล้างข้อมูลแล้ว'); render();
-    },
-    'reset-weights': () => { const def = defaultSettings().weights; Object.entries(def).forEach(([k, v]) => { const i = $(`[name="w:${k}"]`); if (i) i.value = v; }); toast('คืนค่าเริ่มต้นแล้ว — กดบันทึกเพื่อยืนยัน'); },
-    disconnect: async () => {
-      if (!(await confirmBox('ยกเลิกการเชื่อมต่อ', 'กลับไปใช้ข้อมูลที่เก็บในเครื่องนี้?', 'ยกเลิกการเชื่อมต่อ'))) return;
-      try { localStorage.removeItem('mugr.api'); } catch (e) {}
-      logout();
-    },
-    'push-remote': () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json'; inp.onchange = () => restoreFile(inp.files[0]); inp.click(); },
-  };
-
-  async function restoreFile(file) {
-    if (!file) return;
-    try {
-      const data = JSON.parse(await file.text());
-      if (!data || !Array.isArray(data.works) || !Array.isArray(data.users)) throw new Error('รูปแบบไฟล์ไม่ถูกต้อง');
-      if (!data.users.some((u) => u.role === 'admin')) throw new Error('ไฟล์ต้องมีบัญชีผู้ดูแลระบบอย่างน้อย 1 บัญชี');
-      if (!(await confirmBox('กู้คืนข้อมูล', `แทนที่ข้อมูลปัจจุบันด้วยไฟล์ “${esc(file.name)}” (ผลงาน ${data.works.length} รายการ)?`, 'กู้คืน'))) return;
-      await replaceAll(data);
-      const me = S.data.users.find((u) => u.username === S.user.username);
-      if (!me) { toast('กู้คืนแล้ว — กรุณาเข้าสู่ระบบใหม่'); return logout(); }
-      S.user = me; persistSession(); toast('กู้คืนข้อมูลแล้ว'); render();
-    } catch (e) { toast('กู้คืนไม่สำเร็จ: ' + e.message, 'error'); }
+    });
+    const U = [
+      { id: 'u_admin', username: 'admin', displayName: 'ผู้ดูแลระบบ', role: 'admin', passwordHash: await hashPw('admin', 'admin1234') },
+      { id: 'u_chair', username: 'chair', displayName: 'ประธานหลักสูตรชีวเคมี', role: 'chair', programId: 'p_bio', passwordHash: await hashPw('chair', 'chair1234') },
+      { id: 'u_lect', username: 'lecturer', displayName: 'ดร.สมชาย ใจดี', role: 'lecturer', lecturerId: 'l_1', passwordHash: await hashPw('lecturer', 'lecturer1234') },
+      { id: 'u_exec', username: 'exec', displayName: 'คณบดีบัณฑิตวิทยาลัย', role: 'executive', passwordHash: await hashPw('exec', 'exec1234') },
+    ];
+    const pub = (title, category, journal, yr, quartile, verified = true) => ({ id: uid('pub'), title, category, journal, year: yr, quartile: quartile || '', issn: '', url: '', verified });
+    const X = [
+      { id: 'x_1', prefix: 'ดร.', nameTh: 'สมศักดิ์ วิชาการดี', nameEn: 'Somsak Wichakandee', position: 'รองศาสตราจารย์', affiliation: 'มหาวิทยาลัยตัวอย่าง (ข้อมูลสมมติ)', degreeLevel: 'phd', degreeName: 'Ph.D. (Biochemistry)',
+        role: 'กรรมการสอบวิทยานิพนธ์', programId: 'p_bio', examLevel: 'master', standard: '2565', researchExp: true,
+        pubs: [pub('Antioxidant Activity of Thai Herbal Extracts', 'scopus', 'Journal of Biomedical Research (Sample)', y - 2, 'Q3'), pub('Gene Expression in Drug-resistant Cells', 'scopus', 'Asian Journal of Molecular Biology (Sample)', y - 4, 'Q2'),
+          pub('ฤทธิ์ทางชีวภาพของสารสกัดจากพืชพื้นบ้าน', 'tci1', 'วารสารวิจัยวิทยาศาสตร์สุขภาพ (ตัวอย่าง)', y - 6), pub('การตรวจวัดเอนไซม์ในผู้ป่วยเบาหวาน', 'tci2', 'วารสารบัณฑิตศึกษา (ตัวอย่าง)', y - 8), pub('ชีวเคมีคลินิกเบื้องต้น', 'tci1', 'วารสารวิจัยวิทยาศาสตร์สุขภาพ (ตัวอย่าง)', y - 1)] },
+      { id: 'x_2', prefix: 'ดร.', nameTh: 'นภา ตัวอย่างดี', nameEn: 'Napa Tuayangdee', position: 'ผู้ช่วยศาสตราจารย์', affiliation: 'สถาบันวิจัยตัวอย่าง (ข้อมูลสมมติ)', degreeLevel: 'phd', degreeName: 'ปร.ด. (ประชากรศึกษา)',
+        role: 'กรรมการสอบวิทยานิพนธ์', programId: 'p_pop', examLevel: 'phd', standard: '2565',
+        pubs: [pub('Fertility Decline in Southeast Asia', 'scopus', 'Asian Population Studies (Sample)', y - 3, 'Q2'), pub('การย้ายถิ่นของแรงงานข้ามชาติ', 'tci1', 'วารสารสังคมศาสตร์และประชากร (ตัวอย่าง)', y - 5),
+          pub('ครอบครัวข้ามรุ่นในชนบทไทย', 'tci3', 'วารสารตัวอย่าง', y - 2), pub('Ageing Society and Care Policy', 'wos', 'Journal of Ageing and Society (Sample)', y - 1, 'Q3', false)] },
+      { id: 'x_3', prefix: 'นาย', nameTh: 'ทดสอบ ไม่มีปริญญาเอก', nameEn: 'Thodsob Example', position: '', affiliation: 'หน่วยงานตัวอย่าง (ข้อมูลสมมติ)', degreeLevel: 'master', degreeName: 'ส.ม.',
+        role: 'ผู้ทรงคุณวุฒิตรวจเครื่องมือวิจัย', programId: 'p_ph', examLevel: 'master', standard: '2558', researchExp: true,
+        pubs: [pub('การประเมินโครงการสุขภาพชุมชน', 'tci2', 'วารสารสาธารณสุขชุมชน (ตัวอย่าง)', y - 2)] },
+    ].map((x) => Object.assign(x, { createdAt: new Date().toISOString(), createdBy: 'ตัวอย่าง', updatedAt: new Date().toISOString() }));
+    const settings = Object.assign(defaultSettings(), { demo: true });
+    return { programs: P, lecturers: L, works: W, users: U, externals: X, settings };
   }
 
-  document.addEventListener('click', async (ev) => {
-    const el = ev.target.closest('[data-action]');
-    if (el && ACTIONS[el.dataset.action] && el.tagName !== 'INPUT') {
-      if (el.tagName === 'A' && el.dataset.action !== 'tab') ev.preventDefault();
-      try { await ACTIONS[el.dataset.action](el, ev); } catch (e) { toast(e.message || String(e), 'error'); }
-      return;
-    }
-    const row = ev.target.closest('tr[data-href]');
-    if (row && !ev.target.closest('a,button')) location.hash = row.dataset.href;
-  });
-
-  document.addEventListener('change', (ev) => {
-    const t = ev.target;
-    if (t.dataset.action === 'restore') { restoreFile(t.files[0]); t.value = ''; return; }
-    if (t.dataset.action === 'toggle-pub') {
-      const x = byId(S.data.externals, t.dataset.x);
-      upsert('externals', Object.assign({}, x, { pubs: x.pubs.map((p) => (p.id === t.dataset.id ? Object.assign({}, p, { verified: t.checked }) : p)) }))
-        .then(render).catch((e) => toast(e.message, 'error'));
-      return;
-    }
-    if (t.dataset.filter && t.tagName === 'SELECT') applyFilter(t);
-  });
-  let filterTimer;
-  document.addEventListener('input', (ev) => {
-    const t = ev.target;
-    if (t.dataset.filter && t.tagName === 'INPUT') { clearTimeout(filterTimer); filterTimer = setTimeout(() => applyFilter(t, true), 200); }
-  });
-  function applyFilter(t, keepFocus) {
-    const [page, key] = t.dataset.filter.split('.');
-    (view.filters[page] = view.filters[page] || {})[key] = t.value;
-    const pos = t.selectionStart;
-    render();
-    if (keepFocus) { const n = $(`[data-filter="${t.dataset.filter}"]`); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) {} } }
+  // ================= CSV / backup =================
+  function download(name, text, type) {
+    const blob = new Blob([text], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
-
-  document.addEventListener('submit', async (ev) => {
-    if (ev.target.id === 'settingsForm') {
-      ev.preventDefault();
-      const fd = Object.fromEntries(new FormData(ev.target).entries());
-      const s = JSON.parse(JSON.stringify(st()));
-      s.collegeName = fd.collegeName.trim() || s.collegeName;
-      s.university = fd.university.trim() || s.university;
-      s.refYear = parseInt(fd.refYear, 10) || s.refYear;
-      s.windowYears = Math.max(1, parseInt(fd.windowYears, 10) || 5);
-      s.adminEmails = String(fd.adminEmails || '').split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter((x) => EMAIL_RE.test(x));
-      Object.keys(fd).forEach((k) => {
-        const v = fd[k];
-        if (k.startsWith('w:')) s.weights[k.slice(2)] = Math.max(0, parseFloat(v) || 0);
-        if (k.startsWith('t:')) s.targets[k.slice(2)] = Math.max(1, parseFloat(v) || 1);
-        if (k.startsWith('r:')) { const [, grp, field] = k.split(':'); s.requirements[grp][field] = Math.max(0, parseInt(v, 10) || 0); }
-      });
-      try { await upsert('settings', s); toast('บันทึกการตั้งค่าแล้ว'); render(); } catch (e) { toast(e.message, 'error'); }
-    }
-    if (ev.target.id === 'externalCheckForm') {
-      ev.preventDefault();
-      const x = byId(S.data.externals, ev.target.dataset.id);
-      const e = evalExternal(x);
-      try {
-        await upsert('externals', Object.assign({}, x, { checkNote: ev.target.checkNote.value.trim(), checkResult: e.status, checkedBy: S.user.displayName || S.user.username, checkedAt: new Date().toISOString() }));
-        toast('บันทึกผลการตรวจแล้ว'); render();
-      } catch (err) { toast(err.message, 'error'); }
-    }
-    if (ev.target.id === 'apiForm') {
-      ev.preventDefault();
-      const url = ev.target.apiUrl.value.trim();
-      if (url && !/^https:\/\/script\.google\.com\//.test(url)) { toast('URL ต้องขึ้นต้นด้วย https://script.google.com/', 'error'); return; }
-      try { if (url) localStorage.setItem('mugr.api', url); else localStorage.removeItem('mugr.api'); } catch (e) {}
-      toast('บันทึกแล้ว — กรุณาเข้าสู่ระบบด้วยบัญชีใน Google Sheets');
-      logout();
-    }
-  });
-
-  // Global search
-  const searchInput = $('#globalSearch');
-  const searchPop = $('#searchPop');
-  searchInput.addEventListener('input', () => {
-    const q = searchInput.value.trim().toLowerCase();
-    if (!q) { searchPop.hidden = true; return; }
-    const lecs = scopeLecturers().filter((l) => [l.prefix, l.nameTh, l.nameEn].join(' ').toLowerCase().includes(q)).slice(0, 6);
-    const works = scopeWorks().filter((w) => String(w.title).toLowerCase().includes(q)).slice(0, 5);
-    searchPop.innerHTML = (lecs.map((l) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l, true))}<small>${esc(programName(l.programId))}</small></a>`).join('') +
-      works.map((w) => `<a href="#/lecturer/${w.lecturerId}">${esc(w.title)}<small>ผลงาน · ${toBE(w.year)}</small></a>`).join('')) || '<div class="muted small" style="padding:8px">ไม่พบผลลัพธ์</div>';
-    searchPop.hidden = false;
-  });
-  searchInput.addEventListener('blur', () => setTimeout(() => { searchPop.hidden = true; }, 150));
-  searchPop.addEventListener('click', () => { searchInput.value = ''; searchPop.hidden = true; });
-
-  // Mobile sidebar
-  function closeSidebar() { $('#sidebar').classList.remove('open'); $('#scrim').hidden = true; }
-  $('#menuBtn').addEventListener('click', () => { $('#sidebar').classList.add('open'); $('#scrim').hidden = false; });
-  $('#scrim').addEventListener('click', closeSidebar);
-
-  function updateThemeIcon() {
-    const cur = document.documentElement.dataset.theme;
-    const dark = cur === 'dark' || (cur === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-    $$('[data-action="toggle-theme"]').forEach((b) => { b.innerHTML = svg(dark ? 'sun' : 'moon'); b.title = dark ? 'สลับเป็นโหมดสว่าง' : 'สลับเป็นโหมดมืด'; });
+  function exportCsv() {
+    const head = ['ชื่อผลงาน', 'อาจารย์', 'หลักสูตร', 'ประเภท', 'แหล่งเผยแพร่', 'ระดับ ก.พ.อ.', 'Quartile', 'วารสาร', 'ISSN', 'ปี (พ.ศ.)', 'สถานะ', 'ค่าน้ำหนัก', 'นับคะแนน', 'DOI', 'ลิงก์หลักฐาน', 'ผู้ตรวจ', 'วันที่ตรวจ'];
+    const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    const rows = scopeWorks().map((w) => { const l = byId(S.data.lecturers, w.lecturerId); const c = catOf(w.category);
+      return [w.title, lecturerName(l, true), l ? programName(l.programId) : '', typeOf(w.type).label, c.label, c.kpa === 'intl' ? 'นานาชาติ' : c.kpa === 'nat' ? 'ชาติ' : '', w.quartile, w.journal, w.issn, toBE(w.year), (C.STATUSES[w.status] || {}).label, weightOf(w), isCountable(w) ? 'ใช่' : 'ไม่', w.doi, w.url, w.reviewedBy, w.reviewedAt].map(q).join(','); });
+    download(`ผลงานวิชาการ_${st().refYear}.csv`, '﻿' + [head.map(q).join(',')].concat(rows).join('\r\n'), 'text/csv;charset=utf-8');
   }
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeIcon);

@@ -127,6 +127,7 @@
       targets: { bachelor: C.LEVELS.bachelor.target, master: C.LEVELS.master.target, phd: C.LEVELS.phd.target },
       requirements: JSON.parse(JSON.stringify(C.DEFAULT_REQUIREMENTS)),
       adminEmails: [], // อีเมลที่ได้สิทธิ์ผู้ดูแลระบบทันทีเมื่อสมัครใช้งาน
+      adminOnlyEdit: true, // true = เฉพาะผู้ดูแลระบบเพิ่ม/แก้ไข/ลบ/ตรวจรับรองข้อมูลได้ บทบาทอื่นดูได้อย่างเดียว
       apiUrl: '',
     };
   }
@@ -142,6 +143,7 @@
     s.targets = Object.assign({}, def.targets, s.targets || {});
     s.requirements = Object.assign({}, def.requirements, s.requirements || {});
     if (!Array.isArray(s.adminEmails)) s.adminEmails = [];
+    s.adminOnlyEdit = s.adminOnlyEdit !== false;
     if (OLD_NAMES.includes(s.collegeName)) { s.collegeName = def.collegeName; s.university = def.university; }
     d.settings = s;
     return d;
@@ -245,26 +247,31 @@
     const ids = new Set(scopeLecturers().map((l) => l.id));
     return S.data.works.filter((w) => ids.has(w.lecturerId));
   }
+  // โหมด "ผู้ดูแลระบบจัดการคนเดียว" (ค่าเริ่มต้น): บทบาทอื่นดูข้อมูลได้อย่างเดียว
+  const adminOnly = () => !S.data || S.data.settings.adminOnlyEdit !== false;
+  const readOnlyRole = () => !isAdmin() && adminOnly();
   function canEditLecturer(l) {
     if (isAdmin()) return true;
+    if (readOnlyRole()) return false;
     if (role() === 'chair') return !l || l.programId === S.user.programId;
     if (role() === 'lecturer') return !!l && l.id === S.user.lecturerId;
     return false;
   }
-  const canAddLecturer = () => isAdmin() || role() === 'chair';
+  const canAddLecturer = () => isAdmin() || (!adminOnly() && role() === 'chair');
   function canEditWork(w) {
     if (isAdmin()) return true;
+    if (readOnlyRole()) return false;
     const l = w && byId(S.data.lecturers, w.lecturerId);
     if (role() === 'chair') return !w || (l && l.programId === S.user.programId);
     if (role() === 'lecturer') return !w || (w.lecturerId === S.user.lecturerId && w.status !== 'verified');
     return false;
   }
   const canSeeExternals = () => ['admin', 'chair', 'executive'].includes(role());
-  const canEditExternal = () => isAdmin() || role() === 'chair';
-  const canAddWork = () => ['admin', 'chair', 'lecturer'].includes(role()) && (role() !== 'lecturer' || !!S.user.lecturerId);
+  const canEditExternal = () => isAdmin() || (!adminOnly() && role() === 'chair');
+  const canAddWork = () => isAdmin() || (!adminOnly() && ['chair', 'lecturer'].includes(role()) && (role() !== 'lecturer' || !!S.user.lecturerId));
   function canVerify(w) {
     if (isAdmin()) return true;
-    if (role() !== 'chair') return false;
+    if (readOnlyRole() || role() !== 'chair') return false;
     const l = w && byId(S.data.lecturers, w.lecturerId);
     return !w || (l && l.programId === S.user.programId);
   }

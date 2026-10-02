@@ -39,6 +39,7 @@
     return `
       <div class="page-head"><div><h1>ผลงานวิชาการ</h1><p>บันทึก แก้ไข และติดตามสถานะผลงาน · ช่วงนับผลงาน ${windowStart()}–${st().refYear}</p></div>
         <div class="btn-row"><button class="btn" data-action="export-csv">${ic('download')}ส่งออก CSV</button>${canAddWork() ? `<button class="btn primary" data-action="add-work">${ic('plus')}เพิ่มผลงาน</button>` : ''}</div></div>
+      ${readOnlyBanner()}
       <div class="card">
         <div class="toolbar">
           <input class="input grow" type="search" placeholder="ค้นหาชื่อผลงาน วารสาร หรือชื่ออาจารย์…" value="${esc(f.q)}" data-filter="works.q">
@@ -51,6 +52,10 @@
           <div class="toolbar" style="border-top:1px solid var(--border);border-bottom:0"><span class="muted small">แสดง ${fmtInt(list.length)} รายการ · ค่าน้ำหนักแสดงเฉพาะผลงานที่รับรองแล้วและอยู่ในช่วง ${st().windowYears} ปี</span></div>`
           : emptyState('doc', 'ไม่พบผลงาน', 'ลองเปลี่ยนตัวกรอง หรือเพิ่มผลงานใหม่', canAddWork() ? `<button class="btn primary" data-action="add-work">${ic('plus')}เพิ่มผลงาน</button>` : '')}
       </div>`;
+  }
+
+  function readOnlyBanner() {
+    return readOnlyRole() ? `<div class="alert tone-info mb">${ic('info')}<div><b>ดูข้อมูลได้อย่างเดียว</b>ผู้ดูแลระบบเป็นผู้เพิ่ม แก้ไข และตรวจรับรองข้อมูล หากต้องการแก้ไขหรือเพิ่มผลงาน กรุณาแจ้งผู้ดูแลระบบ</div></div>` : '';
   }
 
   function workForm(w, presetLecturer) {
@@ -197,6 +202,7 @@
     return `
       <div class="page-head"><div><h1>อาจารย์ประจำหลักสูตร</h1><p>สถานะคุณสมบัติด้านผลงานวิชาการ ${st().windowYears} ปีย้อนหลัง</p></div>
         ${canAddLecturer() ? `<button class="btn primary" data-action="add-lecturer">${ic('plus')}เพิ่มอาจารย์</button>` : ''}</div>
+      ${readOnlyBanner()}
       <div class="card">
         <div class="toolbar">
           <input class="input grow" type="search" placeholder="ค้นหาชื่ออาจารย์…" value="${esc(f.q)}" data-filter="lecturers.q">

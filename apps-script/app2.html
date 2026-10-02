@@ -167,7 +167,7 @@
     externals: { title: 'ตรวจคุณสมบัติบุคคลภายนอก', icon: 'search', render: renderExternals, allow: canSeeExternals },
     external: { title: 'ผู้ทรงคุณวุฒิภายนอก', render: renderExternal, hidden: true, allow: canSeeExternals },
     programs: { title: 'หลักสูตร', icon: 'layers', render: renderPrograms },
-    verify: { title: 'ตรวจรับรองผลงาน', icon: 'shield', render: renderVerify, allow: () => isAdmin() || role() === 'chair' },
+    verify: { title: 'ตรวจรับรองผลงาน', icon: 'shield', render: renderVerify, allow: () => isAdmin() || (!adminOnly() && role() === 'chair') },
     assessment: { title: 'ประเมินคุณภาพหลักสูตร', icon: 'chart', render: renderAssessment, allow: () => role() !== 'lecturer' },
     reports: { title: 'รายงาน', icon: 'printer', render: renderReports },
     report: { title: 'รายงาน', render: renderReport, hidden: true },
@@ -213,6 +213,7 @@
     const main = $('#main');
     main.innerHTML = r.render(...args);
     hydrateIcons(main);
+    if ($('#journalStats', main)) refreshJournalStats();
     closeSidebar();
   }
 
@@ -246,7 +247,7 @@
     if (A.noWorks.length) alertBlocks.push(`<div class="alert tone-danger">${ic('xc')}<div><b>อาจารย์ไม่มีผลงานใน ${s.windowYears} ปีย้อนหลัง (${A.noWorks.length} ท่าน)</b>${A.noWorks.slice(0, 6).map((l) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a>`).join(', ')}${A.noWorks.length > 6 ? ' และอื่น ๆ' : ''}</div></div>`);
     if (A.expiring.length) alertBlocks.push(`<div class="alert tone-warning">${ic('clock')}<div><b>ผลงานใกล้หมดอายุ ${s.windowYears} ปี (ตีพิมพ์ปี ${windowStart()} — จะไม่นับในปี ${s.refYear + 1})</b>${A.expiring.slice(0, 6).map(({ l, e }) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a> (${e.expiring.length} เรื่อง)`).join(', ')}</div></div>`);
     if (A.failing.length) alertBlocks.push(`<div class="alert tone-danger">${ic('alert')}<div><b>อาจารย์ที่ผลงานยังไม่ถึงเกณฑ์ขั้นต่ำ (${A.failing.length} ท่าน)</b>${A.failing.slice(0, 6).map(({ l, e }) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a> (${e.counted.length}/${e.req.minWorks})`).join(', ')}</div></div>`);
-    if (A.pending.length && (isAdmin() || role() === 'chair')) alertBlocks.push(`<div class="alert tone-info">${ic('hourglass')}<div><b>ผลงานรอตรวจรับรอง ${A.pending.length} รายการ</b><a href="#/verify">ไปที่หน้าตรวจรับรองผลงาน →</a></div></div>`);
+    if (A.pending.length && canVerify()) alertBlocks.push(`<div class="alert tone-info">${ic('hourglass')}<div><b>ผลงานรอตรวจรับรอง ${A.pending.length} รายการ</b><a href="#/verify">ไปที่หน้าตรวจรับรองผลงาน →</a></div></div>`);
     if (pendingUsers().length) alertBlocks.push(`<div class="alert tone-info">${ic('user')}<div><b>คำขอสมัครใช้งานรออนุมัติ ${pendingUsers().length} รายการ</b><a href="#/admin" data-action="tab" data-tab="admin" data-value="users">ตรวจสอบและกำหนดสิทธิ์ →</a></div></div>`);
     if (A.rejected.length) alertBlocks.push(`<div class="alert tone-danger">${ic('edit')}<div><b>ผลงานถูกส่งกลับแก้ไข ${A.rejected.length} รายการ</b><a href="#/works?status=rejected" data-action="filter-works" data-status="rejected">ดูรายการ →</a></div></div>`);
     if (A.expired.length) alertBlocks.push(`<div class="alert tone-neutral">${ic('info')}<div><b>ผลงานเกิน ${s.windowYears} ปี ${A.expired.length} รายการ</b>ไม่ถูกนำมาคิดคะแนนในปีประเมิน ${s.refYear} (ยังเก็บไว้เป็นประวัติ)</div></div>`);

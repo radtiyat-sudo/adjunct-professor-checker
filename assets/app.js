@@ -127,6 +127,7 @@
       targets: { bachelor: C.LEVELS.bachelor.target, master: C.LEVELS.master.target, phd: C.LEVELS.phd.target },
       requirements: JSON.parse(JSON.stringify(C.DEFAULT_REQUIREMENTS)),
       adminEmails: [], // อีเมลที่ได้สิทธิ์ผู้ดูแลระบบทันทีเมื่อสมัครใช้งาน
+      adminOnlyEdit: true, // true = เฉพาะผู้ดูแลระบบเพิ่ม/แก้ไข/ลบ/ตรวจรับรองข้อมูลได้ บทบาทอื่นดูได้อย่างเดียว
       apiUrl: '',
     };
   }
@@ -142,6 +143,7 @@
     s.targets = Object.assign({}, def.targets, s.targets || {});
     s.requirements = Object.assign({}, def.requirements, s.requirements || {});
     if (!Array.isArray(s.adminEmails)) s.adminEmails = [];
+    s.adminOnlyEdit = s.adminOnlyEdit !== false;
     if (OLD_NAMES.includes(s.collegeName)) { s.collegeName = def.collegeName; s.university = def.university; }
     d.settings = s;
     return d;
@@ -245,26 +247,31 @@
     const ids = new Set(scopeLecturers().map((l) => l.id));
     return S.data.works.filter((w) => ids.has(w.lecturerId));
   }
+  // โหมด "ผู้ดูแลระบบจัดการคนเดียว" (ค่าเริ่มต้น): บทบาทอื่นดูข้อมูลได้อย่างเดียว
+  const adminOnly = () => !S.data || S.data.settings.adminOnlyEdit !== false;
+  const readOnlyRole = () => !isAdmin() && adminOnly();
   function canEditLecturer(l) {
     if (isAdmin()) return true;
+    if (readOnlyRole()) return false;
     if (role() === 'chair') return !l || l.programId === S.user.programId;
     if (role() === 'lecturer') return !!l && l.id === S.user.lecturerId;
     return false;
   }
-  const canAddLecturer = () => isAdmin() || role() === 'chair';
+  const canAddLecturer = () => isAdmin() || (!adminOnly() && role() === 'chair');
   function canEditWork(w) {
     if (isAdmin()) return true;
+    if (readOnlyRole()) return false;
     const l = w && byId(S.data.lecturers, w.lecturerId);
     if (role() === 'chair') return !w || (l && l.programId === S.user.programId);
     if (role() === 'lecturer') return !w || (w.lecturerId === S.user.lecturerId && w.status !== 'verified');
     return false;
   }
   const canSeeExternals = () => ['admin', 'chair', 'executive'].includes(role());
-  const canEditExternal = () => isAdmin() || role() === 'chair';
-  const canAddWork = () => ['admin', 'chair', 'lecturer'].includes(role()) && (role() !== 'lecturer' || !!S.user.lecturerId);
+  const canEditExternal = () => isAdmin() || (!adminOnly() && role() === 'chair');
+  const canAddWork = () => isAdmin() || (!adminOnly() && ['chair', 'lecturer'].includes(role()) && (role() !== 'lecturer' || !!S.user.lecturerId));
   function canVerify(w) {
     if (isAdmin()) return true;
-    if (role() !== 'chair') return false;
+    if (readOnlyRole() || role() !== 'chair') return false;
     const l = w && byId(S.data.lecturers, w.lecturerId);
     return !w || (l && l.programId === S.user.programId);
   }
@@ -438,7 +445,7 @@
     externals: { title: 'ตรวจคุณสมบัติบุคคลภายนอก', icon: 'search', render: renderExternals, allow: canSeeExternals },
     external: { title: 'ผู้ทรงคุณวุฒิภายนอก', render: renderExternal, hidden: true, allow: canSeeExternals },
     programs: { title: 'หลักสูตร', icon: 'layers', render: renderPrograms },
-    verify: { title: 'ตรวจรับรองผลงาน', icon: 'shield', render: renderVerify, allow: () => isAdmin() || role() === 'chair' },
+    verify: { title: 'ตรวจรับรองผลงาน', icon: 'shield', render: renderVerify, allow: () => isAdmin() || (!adminOnly() && role() === 'chair') },
     assessment: { title: 'ประเมินคุณภาพหลักสูตร', icon: 'chart', render: renderAssessment, allow: () => role() !== 'lecturer' },
     reports: { title: 'รายงาน', icon: 'printer', render: renderReports },
     report: { title: 'รายงาน', render: renderReport, hidden: true },
@@ -484,6 +491,7 @@
     const main = $('#main');
     main.innerHTML = r.render(...args);
     hydrateIcons(main);
+    if ($('#journalStats', main)) refreshJournalStats();
     closeSidebar();
   }
 
@@ -517,7 +525,7 @@
     if (A.noWorks.length) alertBlocks.push(`<div class="alert tone-danger">${ic('xc')}<div><b>อาจารย์ไม่มีผลงานใน ${s.windowYears} ปีย้อนหลัง (${A.noWorks.length} ท่าน)</b>${A.noWorks.slice(0, 6).map((l) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a>`).join(', ')}${A.noWorks.length > 6 ? ' และอื่น ๆ' : ''}</div></div>`);
     if (A.expiring.length) alertBlocks.push(`<div class="alert tone-warning">${ic('clock')}<div><b>ผลงานใกล้หมดอายุ ${s.windowYears} ปี (ตีพิมพ์ปี ${windowStart()} — จะไม่นับในปี ${s.refYear + 1})</b>${A.expiring.slice(0, 6).map(({ l, e }) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a> (${e.expiring.length} เรื่อง)`).join(', ')}</div></div>`);
     if (A.failing.length) alertBlocks.push(`<div class="alert tone-danger">${ic('alert')}<div><b>อาจารย์ที่ผลงานยังไม่ถึงเกณฑ์ขั้นต่ำ (${A.failing.length} ท่าน)</b>${A.failing.slice(0, 6).map(({ l, e }) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a> (${e.counted.length}/${e.req.minWorks})`).join(', ')}</div></div>`);
-    if (A.pending.length && (isAdmin() || role() === 'chair')) alertBlocks.push(`<div class="alert tone-info">${ic('hourglass')}<div><b>ผลงานรอตรวจรับรอง ${A.pending.length} รายการ</b><a href="#/verify">ไปที่หน้าตรวจรับรองผลงาน →</a></div></div>`);
+    if (A.pending.length && canVerify()) alertBlocks.push(`<div class="alert tone-info">${ic('hourglass')}<div><b>ผลงานรอตรวจรับรอง ${A.pending.length} รายการ</b><a href="#/verify">ไปที่หน้าตรวจรับรองผลงาน →</a></div></div>`);
     if (pendingUsers().length) alertBlocks.push(`<div class="alert tone-info">${ic('user')}<div><b>คำขอสมัครใช้งานรออนุมัติ ${pendingUsers().length} รายการ</b><a href="#/admin" data-action="tab" data-tab="admin" data-value="users">ตรวจสอบและกำหนดสิทธิ์ →</a></div></div>`);
     if (A.rejected.length) alertBlocks.push(`<div class="alert tone-danger">${ic('edit')}<div><b>ผลงานถูกส่งกลับแก้ไข ${A.rejected.length} รายการ</b><a href="#/works?status=rejected" data-action="filter-works" data-status="rejected">ดูรายการ →</a></div></div>`);
     if (A.expired.length) alertBlocks.push(`<div class="alert tone-neutral">${ic('info')}<div><b>ผลงานเกิน ${s.windowYears} ปี ${A.expired.length} รายการ</b>ไม่ถูกนำมาคิดคะแนนในปีประเมิน ${s.refYear} (ยังเก็บไว้เป็นประวัติ)</div></div>`);
@@ -622,6 +630,7 @@
     return `
       <div class="page-head"><div><h1>ผลงานวิชาการ</h1><p>บันทึก แก้ไข และติดตามสถานะผลงาน · ช่วงนับผลงาน ${windowStart()}–${st().refYear}</p></div>
         <div class="btn-row"><button class="btn" data-action="export-csv">${ic('download')}ส่งออก CSV</button>${canAddWork() ? `<button class="btn primary" data-action="add-work">${ic('plus')}เพิ่มผลงาน</button>` : ''}</div></div>
+      ${readOnlyBanner()}
       <div class="card">
         <div class="toolbar">
           <input class="input grow" type="search" placeholder="ค้นหาชื่อผลงาน วารสาร หรือชื่ออาจารย์…" value="${esc(f.q)}" data-filter="works.q">
@@ -634,6 +643,10 @@
           <div class="toolbar" style="border-top:1px solid var(--border);border-bottom:0"><span class="muted small">แสดง ${fmtInt(list.length)} รายการ · ค่าน้ำหนักแสดงเฉพาะผลงานที่รับรองแล้วและอยู่ในช่วง ${st().windowYears} ปี</span></div>`
           : emptyState('doc', 'ไม่พบผลงาน', 'ลองเปลี่ยนตัวกรอง หรือเพิ่มผลงานใหม่', canAddWork() ? `<button class="btn primary" data-action="add-work">${ic('plus')}เพิ่มผลงาน</button>` : '')}
       </div>`;
+  }
+
+  function readOnlyBanner() {
+    return readOnlyRole() ? `<div class="alert tone-info mb">${ic('info')}<div><b>ดูข้อมูลได้อย่างเดียว</b>ผู้ดูแลระบบเป็นผู้เพิ่ม แก้ไข และตรวจรับรองข้อมูล หากต้องการแก้ไขหรือเพิ่มผลงาน กรุณาแจ้งผู้ดูแลระบบ</div></div>` : '';
   }
 
   function workForm(w, presetLecturer) {
@@ -780,6 +793,7 @@
     return `
       <div class="page-head"><div><h1>อาจารย์ประจำหลักสูตร</h1><p>สถานะคุณสมบัติด้านผลงานวิชาการ ${st().windowYears} ปีย้อนหลัง</p></div>
         ${canAddLecturer() ? `<button class="btn primary" data-action="add-lecturer">${ic('plus')}เพิ่มอาจารย์</button>` : ''}</div>
+      ${readOnlyBanner()}
       <div class="card">
         <div class="toolbar">
           <input class="input grow" type="search" placeholder="ค้นหาชื่ออาจารย์…" value="${esc(f.q)}" data-filter="lecturers.q">
@@ -1121,6 +1135,8 @@
     return `
       <div class="page-head"><div><h1>ตรวจคุณสมบัติบุคคลภายนอก</h1><p>ผู้ทรงคุณวุฒิภายนอก / กรรมการสอบวิทยานิพนธ์ — ค้นชื่อในฐานข้อมูลและตรวจตามเกณฑ์ 2548 · 2558 · 2565 (อ้างอิงประกาศ ก.พ.อ. 2562)</p></div>
         ${canEditExternal() ? `<button class="btn primary" data-action="add-external">${ic('plus')}ตรวจบุคคลใหม่</button>` : ''}</div>
+      ${readOnlyBanner()}
+      ${quickCheckCard()}
       <div class="card">
         <div class="toolbar">
           <input class="input grow" type="search" placeholder="ค้นหาชื่อ หรือหน่วยงาน…" value="${esc(f.q)}" data-filter="externals.q">
@@ -1239,7 +1255,8 @@
             <h3>${e.status === 'pass' ? 'ผ่านคุณสมบัติ' : e.status === 'pending' ? 'คุณวุฒิผ่าน — รอยืนยันผลงาน' : 'ไม่ผ่านคุณสมบัติ'} ตาม${esc(e.std.label)} (${esc(EXAM_LEVELS[e.level])})</h3>
             <p>คุณวุฒิ: ${e.degreeOk ? 'ผ่าน' : 'ไม่ผ่าน'} (${esc(DEGREE_LEVELS[x.degreeLevel] || '—')}${x.position ? ', ' + esc(x.position) : ''}) · ผลงาน: ${esc(e.progress)}</p></div></div></div>
           <div class="card"><div class="card-head"><h2>${ic('scale')} ผลการตรวจเทียบเกณฑ์ทุกปี</h2><span class="muted small">★ เกณฑ์ที่หลักสูตรใช้</span></div>${externalMatrix(x)}</div>
-          <div class="card"><div class="card-head"><h2>${ic('doc')} ผลงานที่ตรวจพบ (${pubs.length}) — นานาชาติ ${e.ver.intl} · ชาติ ${e.ver.nat} · ไม่นับ ${e.ver.other}</h2>${edit ? `<button class="btn primary sm" data-action="add-pub" data-x="${x.id}">${ic('plus')}บันทึกผลงาน</button>` : ''}</div>
+          ${edit ? autoFetchCard(x) : ''}
+          <div class="card"><div class="card-head"><h2>${ic('doc')} ผลงานที่ตรวจพบ (${pubs.length}) — นานาชาติ ${e.ver.intl} · ชาติ ${e.ver.nat} · ไม่นับ ${e.ver.other}</h2>${edit ? `<div class="btn-row">${pubs.some((p) => !p.verified) ? `<button class="btn sm" data-action="verify-all-pubs" data-x="${x.id}">${ic('check')}ยืนยันทุกรายการ</button>` : ''}<button class="btn primary sm" data-action="add-pub" data-x="${x.id}">${ic('plus')}บันทึกผลงาน</button></div>` : ''}</div>
             ${pubs.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>ผลงาน</th><th>ปี</th><th>ฐานข้อมูล</th><th>การยืนยัน</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
               : emptyState('search', 'ยังไม่ได้บันทึกผลงาน', 'ใช้ลิงก์ "ค้นหาชื่อในฐานข้อมูล" ด้านขวา แล้วบันทึกผลงานที่พบทีละรายการ')}</div>
           ${edit ? `<div class="card"><div class="card-head"><h2>${ic('shield')} บันทึกผลการตรวจ</h2>${x.checkedAt ? `<span class="muted small">ล่าสุด ${fmtDate(x.checkedAt)} โดย ${esc(x.checkedBy)}</span>` : ''}</div>
@@ -1254,6 +1271,15 @@
             <dt>ประสบการณ์วิจัย</dt><dd>${x.researchExp ? 'มี' : '—'}</dd><dt>Scopus ID</dt><dd>${esc(x.scopusId || '—')}</dd><dt>ORCID</dt><dd>${esc(x.orcid || '—')}</dd></dl></div>
         </div>
       </div>`;
+  }
+
+  function autoFetchCard(x) {
+    const lecs = findLecturerMatches(x.nameTh).concat(x.nameEn ? findLecturerMatches(x.nameEn) : []).filter((l, i, a) => a.indexOf(l) === i);
+    return `<div class="card"><div class="card-head"><h2>${ic('refresh')} ดึงผลงานอัตโนมัติ</h2><span class="muted small">ไม่ต้องรอเจ้าตัวส่งผลงาน — นับทุกปี</span></div><div class="card-body stack" style="gap:8px">
+      ${lecs.map((l) => `<div class="result-item"><div class="grow"><div class="cell-title">พบในทะเบียนอาจารย์: ${esc(lecturerName(l, true))}</div><div class="meta">${esc(programName(l.programId))} · มีผลงานบันทึกไว้ ${pubsFromLecturer(l).length} รายการ</div></div>
+        <button class="btn sm primary" data-action="pull-lecturer-pubs" data-x="${x.id}" data-id="${l.id}">${ic('download')}ดึงผลงาน</button></div>`).join('')}
+      <div class="btn-row"><button class="btn" data-action="external-online-x" data-x="${x.id}">${ic('search')}ค้นผลงานจากฐานข้อมูลออนไลน์ด้วยชื่อ</button></div>
+      <p class="muted small" style="margin:0">ผลงานที่ดึงจากออนไลน์จะเป็น “รอยืนยัน” — ตรวจแล้วติ๊กยืนยัน หรือกด “ยืนยันทุกรายการ”</p></div></div>`;
   }
 
   function renderExternalReport(id) {
@@ -1282,6 +1308,248 @@
       <tr><td class="cell-title">ผลงานทางวิชาการ</td>${keys.map((k) => `<td>${esc(C.EXTERNAL_STANDARDS[k][level].text)}</td>`).join('')}</tr></tbody></table></div></div>`;
     return `${table('phd')}${table('master')}
       <div class="card card-pad small muted">การนับในระบบ: <b>ระดับนานาชาติ</b> = Scopus, WoS (SCIE/SSCI/AHCI), PubMed, ERIC, MathSciNet, JSTOR, Project MUSE · <b>ระดับชาติ</b> = TCI กลุ่ม 1–2 · <b>ฐานข้อมูลที่ยอมรับ</b> = ระดับชาติ + นานาชาติ ตามประกาศ ก.พ.อ. พ.ศ. 2562 (<a href="${esc(C.KPA_2562.source)}" target="_blank" rel="noopener">ดูประกาศ</a>) · นับเฉพาะผลงานที่ผู้ตรวจ "ยืนยันแล้ว"</div>`;
+  }
+
+  // ================= Auto lookup (ดึงผลงานอัตโนมัติจากชื่อ) =================
+  // 1) จับคู่ชื่อกับทะเบียนอาจารย์ในระบบ → ใช้ผลงานที่บันทึกไว้ทันที
+  // 2) ค้นชื่อในฐานข้อมูลออนไลน์ OpenAlex → จัดกลุ่มวารสารด้วย ISSN จากฐานรายชื่อวารสาร (Scopus / TCI 1 / TCI 2)
+  const NAME_PREFIX_RE = /^(ศาสตราจารย์|รองศาสตราจารย์|ผู้ช่วยศาสตราจารย์|ศ\.|รศ\.|ผศ\.|ดร\.|นาย|นางสาว|นาง|dr\.?|prof\.?|assoc\.?|asst\.?|mr\.?|mrs\.?|ms\.?)\s*/i;
+  function normName(s) {
+    let t = String(s || '').trim().toLowerCase(), prev;
+    do { prev = t; t = t.replace(NAME_PREFIX_RE, '').trim(); } while (t !== prev);
+    return t.replace(/\s+/g, ' ');
+  }
+  function nameMatches(q, person) {
+    const nq = normName(q);
+    if (nq.length < 2) return false;
+    return [person.nameTh, person.nameEn].map(normName).filter(Boolean)
+      .some((c) => c.includes(nq) || nq.includes(c) || nq.split(' ').every((tok) => c.includes(tok)));
+  }
+  const findLecturerMatches = (q) => S.data.lecturers.filter((l) => nameMatches(q, l));
+  const findExternalMatches = (q) => S.data.externals.filter((x) => nameMatches(q, x));
+  const guessDegree = (p) => (/ดร\.|ด\.|ph\.?\s?d|ed\.?d|d\.phil|doctor/i.test([p.prefix, p.degree, p.degreeName].join(' ')) ? 'phd' : 'master');
+
+  function pubsFromLecturer(l) {
+    return worksOf(l.id).filter((w) => w.status !== 'rejected').map((w) => ({
+      id: uid('pub'), title: w.title, category: w.category, journal: w.journal, issn: w.issn, year: toBE(w.year), quartile: w.quartile,
+      url: w.url || w.doi || '', verified: w.status === 'verified', source: 'ทะเบียนอาจารย์', fromWorkId: w.id,
+    }));
+  }
+  function pubKey(p) {
+    const doi = String(p.url || p.doi || '').match(/10\.\d{4,}\/\S+/);
+    return doi ? doi[0].toLowerCase() : String(p.title || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  }
+  function mergePubs(existing, incoming) {
+    const keys = new Set(existing.map(pubKey));
+    const added = incoming.filter((p) => { const k = pubKey(p); if (!k || keys.has(k)) return false; keys.add(k); return true; });
+    return { pubs: existing.concat(added), added: added.length };
+  }
+  // สร้างแบบตรวจบุคคลภายนอกจากข้อมูลอาจารย์ในทะเบียน
+  function externalFromLecturer(l, level, std) {
+    return {
+      id: uid('x'), prefix: l.prefix, position: l.position, nameTh: l.nameTh, nameEn: l.nameEn, affiliation: programName(l.programId),
+      degreeLevel: guessDegree(l), degreeName: l.degree, role: C.EXTERNAL_ROLES[0], programId: '', examLevel: level, standard: std,
+      scopusId: l.scopusId, orcid: l.orcid, researchExp: worksOf(l.id).length > 0, lecturerId: l.id, pubs: pubsFromLecturer(l),
+      createdAt: new Date().toISOString(), createdBy: S.user.displayName,
+    };
+  }
+
+  // ---- ฐานรายชื่อวารสาร (ISSN → กลุ่ม) ----
+  const JKEY = 'mugr.journals';
+  const JOURNAL_CATS = { scopus: 'Scopus', tci1: 'TCI กลุ่ม 1', tci2: 'TCI กลุ่ม 2' };
+  const JPRI = { tci2: 1, tci1: 2, scopus: 3 };
+  const normIssn = (s) => { const t = String(s || '').toUpperCase().replace(/[^0-9X]/g, ''); return t.length === 8 ? t.slice(0, 4) + '-' + t.slice(4) : ''; };
+  const loadLocalJournals = () => { try { return JSON.parse(localStorage.getItem(JKEY) || '{}'); } catch (e) { return {}; } };
+  async function classifyIssns(issns) {
+    issns = Array.from(new Set(issns.map(normIssn).filter(Boolean)));
+    if (!issns.length) return {};
+    if (S.remote) return (await api('journalsClassify', { issns })).map || {};
+    const db = loadLocalJournals(), map = {};
+    issns.forEach((i) => { if (db[i]) map[i] = db[i]; });
+    return map;
+  }
+  async function journalStats() {
+    if (S.remote) return (await api('journalsStats')).stats || {};
+    const stats = {};
+    Object.values(loadLocalJournals()).forEach((c) => { stats[c] = (stats[c] || 0) + 1; });
+    return stats;
+  }
+  // อ่าน ISSN จากไฟล์ CSV ที่ส่งออกจาก Excel (รายชื่อวารสาร TCI / Scopus Source List)
+  function parseJournalCsv(text) {
+    const rows = [];
+    text.split(/\r?\n/).forEach((line) => {
+      const issns = (line.match(/\b\d{4}-?\d{3}[\dXx]\b/g) || []).map(normIssn).filter(Boolean);
+      if (!issns.length) return;
+      const title = line.split(/[,\t;]/).map((c) => c.replace(/^"|"$/g, '').trim()).find((c) => c && !/^\d{4}-?\d{3}[\dXx]$/.test(c) && /[A-Za-z฀-๿]{3}/.test(c)) || '';
+      issns.forEach((issn) => rows.push({ issn, title: title.slice(0, 200) }));
+    });
+    return rows;
+  }
+  async function importJournals(category, rows, replace) {
+    if (S.remote) {
+      for (let i = 0; i < rows.length; i += 3000) await api('journalsImport', { category, rows: rows.slice(i, i + 3000), replace: replace && i === 0 });
+      return;
+    }
+    const db = loadLocalJournals();
+    if (replace) Object.keys(db).forEach((k) => { if (db[k] === category) delete db[k]; });
+    rows.forEach((r) => { if (!db[r.issn] || JPRI[category] > JPRI[db[r.issn]]) db[r.issn] = category; });
+    try { localStorage.setItem(JKEY, JSON.stringify(db)); } catch (e) { throw new Error('พื้นที่เก็บข้อมูลในเบราว์เซอร์ไม่พอ — แนะนำให้ใช้งานผ่าน Google Sheets'); }
+  }
+
+  // ---- OpenAlex ----
+  async function openalex(path) {
+    if (S.remote) return (await api('openalex', { path })).data;
+    const r = await fetch('https://api.openalex.org' + path);
+    if (!r.ok) throw new Error('ฐานข้อมูลออนไลน์ตอบกลับผิดพลาด (' + r.status + ')');
+    return r.json();
+  }
+  async function searchAuthors(name) {
+    const d = await openalex('/authors?search=' + encodeURIComponent(name) + '&per-page=8');
+    return (d.results || []).map((a) => ({
+      id: String(a.id || '').split('/').pop(), name: a.display_name, works: a.works_count || 0, cited: a.cited_by_count || 0,
+      inst: ((a.last_known_institutions || [])[0] || a.last_known_institution || {}).display_name || '', orcid: a.orcid || '',
+    }));
+  }
+  async function fetchAuthorWorks(authorId) {
+    let all = [], cursor = '*';
+    for (let page = 0; page < 5 && cursor; page++) { // สูงสุด 1,000 รายการ
+      const d = await openalex(`/works?filter=author.id:${encodeURIComponent(authorId)}&per-page=200&select=id,doi,display_name,publication_year,type,primary_location&cursor=${encodeURIComponent(cursor)}`);
+      all = all.concat(d.results || []);
+      cursor = d.meta && d.meta.next_cursor;
+    }
+    const list = all.map((w) => {
+      const src = (w.primary_location || {}).source || {};
+      const issns = [].concat(src.issn || [], src.issn_l ? [src.issn_l] : []).map(normIssn).filter(Boolean);
+      return { title: w.display_name || '', year: w.publication_year ? toBE(w.publication_year) : '', journal: src.display_name || '',
+        issn: issns[0] || '', issns, doi: String(w.doi || '').replace(/^https?:\/\/doi\.org\//, ''), srcType: src.type || '', scopusFlag: src.is_indexed_in_scopus === true };
+    }).filter((w) => w.title);
+    const map = await classifyIssns(list.flatMap((w) => w.issns));
+    list.forEach((w) => {
+      let cat = '';
+      w.issns.forEach((i) => { const c = map[i]; if (c && (!cat || JPRI[c] > JPRI[cat])) cat = c; });
+      w.matched = !!cat;
+      if (!cat && w.scopusFlag) cat = 'scopus';
+      if (!cat) cat = w.srcType === 'conference' ? 'proc_intl' : 'none';
+      w.category = cat;
+    });
+    return list;
+  }
+
+  // หน้าต่างค้นผลงานออนไลน์ → เลือกผู้แต่ง → เลือกผลงาน → เพิ่มเป็น "รอยืนยัน"
+  function openOnlineLookup(x) {
+    const q0 = x.nameEn || x.nameTh || '';
+    const form = openModal({
+      title: 'ค้นผลงานจากฐานข้อมูลออนไลน์', wide: true, submitLabel: 'เพิ่มผลงานที่เลือก',
+      body: `<div class="stack" style="gap:12px">
+        <p class="muted small" style="margin:0">ค้นชื่อผู้แต่งใน OpenAlex (รวมผลงานจาก Crossref, PubMed, ORCID และวารสารทั่วโลก) · ผลงานจะถูกเพิ่มเป็น <b>“รอยืนยัน”</b> ให้ผู้ดูแลระบบตรวจก่อนนับ · บุคคลภายนอกนับผลงานทุกปี</p>
+        <div class="btn-row"><input class="input grow" style="flex:1;min-width:200px" id="olQuery" value="${esc(q0)}" placeholder="ชื่อภาษาอังกฤษ เช่น Somchai Jaidee"><button type="button" class="btn" id="olSearch">${ic('search')}ค้นหา</button></div>
+        <div id="olAuthors"></div><div id="olWorks"></div></div>`,
+      onSubmit: async (v, f) => {
+        const picked = $$('[data-ol-row]', f).filter((r) => $('input[type=checkbox]', r).checked).map((r) => {
+          const w = view.olWorks[+r.dataset.olRow];
+          return { id: uid('pub'), title: w.title, category: $('select', r).value, journal: w.journal, issn: w.issn, year: w.year, quartile: '', url: w.doi || '', verified: false, source: 'OpenAlex' };
+        });
+        if (!picked.length) { toast('ยังไม่ได้เลือกผลงาน', 'error'); return false; }
+        const cur = byId(S.data.externals, x.id) || x;
+        const m = mergePubs(cur.pubs || [], picked);
+        await upsert('externals', Object.assign({}, cur, { pubs: m.pubs }));
+        toast(`เพิ่ม ${m.added} รายการ (รอยืนยัน)${picked.length > m.added ? ` · ข้ามรายการซ้ำ ${picked.length - m.added}` : ''}`);
+        render();
+      },
+    });
+    hydrateIcons(form);
+    const authorsBox = $('#olAuthors', form), worksBox = $('#olWorks', form);
+    const busy = (el, msg) => { el.innerHTML = `<div class="muted small" style="display:flex;gap:8px;align-items:center"><span class="spinner"></span>${esc(msg)}</div>`; };
+    const fail = (el, e) => { el.innerHTML = `<div class="alert tone-danger">${ic('xc')}<div><b>ค้นหาไม่สำเร็จ</b>${esc(e.message || e)} — ลองใหม่อีกครั้ง หรือใช้ลิงก์ค้นหาในฐานข้อมูลแล้วบันทึกเอง</div></div>`; hydrateIcons(el); };
+    async function doSearch() {
+      const q = $('#olQuery', form).value.trim();
+      if (!q) return;
+      worksBox.innerHTML = ''; busy(authorsBox, 'กำลังค้นหาผู้แต่ง…');
+      try {
+        const authors = await searchAuthors(q);
+        authorsBox.innerHTML = authors.length ? `<div class="small muted" style="margin-bottom:6px">เลือกผู้แต่งที่ตรงกับบุคคลนี้ (ดูจากสังกัดและจำนวนผลงาน)</div><div class="stack" style="gap:6px">${authors.map((a) => `
+          <div class="result-item"><div class="grow"><div class="cell-title">${esc(a.name)}</div><div class="meta">${esc(a.inst || 'ไม่ระบุสังกัด')} · ${fmtInt(a.works)} ผลงาน · อ้างอิง ${fmtInt(a.cited)}${a.orcid ? ' · ORCID' : ''}</div></div>
+          <button type="button" class="btn sm" data-ol-author="${esc(a.id)}">เลือก</button></div>`).join('')}</div>`
+          : '<div class="muted small">ไม่พบผู้แต่งชื่อนี้ ลองสะกดชื่อภาษาอังกฤษแบบอื่น</div>';
+      } catch (e) { fail(authorsBox, e); }
+    }
+    async function loadWorks(aid) {
+      busy(worksBox, 'กำลังดึงรายการผลงาน และจัดกลุ่มตามฐานรายชื่อวารสาร…');
+      try {
+        const works = view.olWorks = await fetchAuthorWorks(aid);
+        const existing = new Set(((byId(S.data.externals, x.id) || x).pubs || []).map(pubKey));
+        const countable = (c) => !!catOf(c).kpa;
+        worksBox.innerHTML = `<div class="divider"></div>
+          <div class="small" style="margin-bottom:6px"><b>${fmtInt(works.length)} ผลงาน</b> · จัดกลุ่มได้จากฐานรายชื่อวารสาร ${works.filter((w) => w.matched).length} รายการ · <span class="muted">ติ๊กเฉพาะผลงานที่ใช่ของบุคคลนี้ และแก้ฐานข้อมูลให้ถูกต้องได้</span></div>
+          <div class="table-wrap" style="max-height:340px;overflow:auto"><table class="table"><thead><tr><th></th><th>ผลงาน</th><th>ปี</th><th>ฐานข้อมูล</th></tr></thead><tbody>
+          ${works.map((w, i) => `<tr data-ol-row="${i}"><td><input type="checkbox" ${countable(w.category) && !existing.has(pubKey({ title: w.title, url: w.doi })) ? 'checked' : ''} aria-label="เลือก"></td>
+            <td><div class="cell-title">${esc(w.title)}</div><div class="cell-sub">${esc(w.journal || '—')}${w.issn ? ' · ISSN ' + esc(w.issn) : ''}${existing.has(pubKey({ title: w.title, url: w.doi })) ? ' · <b>มีในรายการแล้ว</b>' : ''}</div></td>
+            <td class="nowrap">${esc(w.year)}</td>
+            <td><select class="input" style="height:32px;min-width:150px">${C.CATEGORIES.filter((c) => c.journal || /^proc/.test(c.id)).map((c) => opt(c.id, c.short, w.category)).join('')}</select>${w.matched ? '' : '<div class="cell-sub">ต้องตรวจสอบ</div>'}</td></tr>`).join('')}
+          </tbody></table></div>`;
+      } catch (e) { fail(worksBox, e); }
+    }
+    $('#olSearch', form).addEventListener('click', doSearch);
+    $('#olQuery', form).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } });
+    authorsBox.addEventListener('click', (e) => { const b = e.target.closest('[data-ol-author]'); if (b) loadWorks(b.dataset.olAuthor); });
+    if (q0) doSearch();
+  }
+
+  // การ์ด "ตรวจด่วนจากชื่อ" บนหน้ารายชื่อบุคคลภายนอก
+  function quickCheckCard() {
+    const qc = view.quick || { q: '', level: 'master', std: '2565' };
+    let result = '';
+    if (qc.q) {
+      const lecs = findLecturerMatches(qc.q);
+      const exts = findExternalMatches(qc.q);
+      const lecBlocks = lecs.map((l) => {
+        const tmp = externalFromLecturer(l, qc.level, qc.std);
+        const e = evalExternal(tmp);
+        const m = STATUS_META[e.status];
+        return `<div class="result-item"><div class="avatar sm">${esc(initials(l.nameTh))}</div><div class="grow">
+          <div class="cell-title">${esc(lecturerName(l, true))} ${chip('อยู่ในทะเบียนอาจารย์', 'primary')}</div>
+          <div class="meta">${esc(programName(l.programId))} · ผลงานทั้งหมด ${tmp.pubs.length} รายการ (นับทุกปี) · นานาชาติ ${e.all.intl} · ชาติ ${e.all.nat}${e.all.intl + e.all.nat > e.ver.intl + e.ver.nat ? ` · รอยืนยัน ${e.all.intl + e.all.nat - e.ver.intl - e.ver.nat}` : ''}</div>
+          <div class="meta">${chip((e.status === 'pass' ? 'ผ่าน' : e.status === 'pending' ? 'ผ่านหากยืนยันผลงาน' : 'ไม่ผ่าน') + ' · ' + e.std.label + ' ' + EXAM_LEVELS[e.level], m.tone, true)} ${esc(e.progress)}${e.degreeOk ? '' : ' · คุณวุฒิ: ต้องตรวจสอบ'}</div></div>
+          ${canEditExternal() ? `<button class="btn sm primary" data-action="external-from-lecturer" data-id="${l.id}">${ic('plus')}สร้างแบบตรวจ</button>` : ''}</div>`;
+      }).join('');
+      const extBlocks = exts.map((x) => { const e = evalExternal(x); return `<div class="result-item"><div class="grow"><div class="cell-title">${esc(lecturerName(x, true))} ${chip('เคยตรวจแล้ว', 'neutral')}</div>
+        <div class="meta">${esc(x.affiliation || '')} · ${chip(e.status === 'pass' ? 'ผ่าน' : e.status === 'pending' ? 'รอยืนยันผลงาน' : 'ไม่ผ่าน', STATUS_META[e.status].tone, true)} ${esc(e.std.label)} · ${esc(e.progress)}</div></div>
+        <a class="btn sm" href="#/external/${x.id}">เปิด</a></div>`; }).join('');
+      result = `<div class="stack" style="gap:8px;margin-top:12px">${lecBlocks}${extBlocks}
+        ${!lecs.length && !exts.length ? `<div class="alert tone-neutral">${ic('info')}<div><b>ไม่พบชื่อนี้ในระบบ</b>ค้นผลงานจากฐานข้อมูลออนไลน์ได้ หรือสร้างแบบตรวจแล้วบันทึกผลงานเอง</div></div>` : ''}
+        ${canEditExternal() ? `<div class="btn-row"><button class="btn" data-action="external-online">${ic('search')}ค้นผลงานออนไลน์ด้วยชื่อ “${esc(qc.q)}”</button></div>` : ''}</div>`;
+    }
+    return `<div class="card mb"><div class="card-head"><h2>${ic('search')} ตรวจด่วนจากชื่อ</h2><span class="muted small">พิมพ์ชื่ออาจารย์ที่มาทำหน้าที่ → ระบบแสดงผลงานที่นับได้ตามเกณฑ์ (นับทุกปี)</span></div>
+      <form class="card-body" id="quickCheckForm"><div class="btn-row">
+        <input class="input" style="flex:1;min-width:220px" name="q" value="${esc(qc.q)}" placeholder="ชื่อ - สกุล ภาษาไทยหรืออังกฤษ" aria-label="ชื่อ">
+        <select class="input" name="level" aria-label="ระดับการสอบ">${Object.entries(EXAM_LEVELS).map(([k, v]) => opt(k, 'สอบ' + v, qc.level)).join('')}</select>
+        <select class="input" name="std" aria-label="เกณฑ์">${Object.entries(C.EXTERNAL_STANDARDS).map(([k, v]) => opt(k, v.label, qc.std)).join('')}</select>
+        <button class="btn primary" type="submit">${ic('search')}ตรวจ</button></div>${result}</form></div>`;
+  }
+
+  // การ์ดฐานรายชื่อวารสารในหน้า จัดการระบบ > ข้อมูล
+  function journalsCard() {
+    return `<div class="card"><div class="card-head"><h2>${ic('book')} ฐานรายชื่อวารสาร (จัดกลุ่มผลงานอัตโนมัติ)</h2></div><div class="card-body">
+      <p class="muted" style="margin-top:0">นำเข้ารายชื่อวารสารพร้อม ISSN เพื่อให้ระบบจัดกลุ่มผลงานที่ค้นจากฐานข้อมูลออนไลน์ได้ถูกต้อง · บันทึกไฟล์ Excel เป็น CSV ก่อนนำเข้า</p>
+      <div class="small" id="journalStats" style="margin-bottom:10px"><span class="spinner"></span></div>
+      <form id="journalImportForm" class="form-grid">
+        <label class="field"><span>ไฟล์นี้คือรายชื่อวารสาร</span><select name="category">${Object.entries(JOURNAL_CATS).map(([k, v]) => opt(k, v, 'tci1')).join('')}</select></label>
+        <label class="field"><span>ไฟล์ CSV</span><input type="file" name="file" accept=".csv,.txt,text/csv" required></label>
+        <label class="check full"><input type="checkbox" name="replace" checked> แทนที่รายชื่อเดิมของกลุ่มนี้ทั้งหมด</label>
+        <div class="full btn-row"><button class="btn primary" type="submit">${ic('upload')}นำเข้ารายชื่อวารสาร</button>
+          <a class="btn" href="https://tci-thailand.org/" target="_blank" rel="noopener">${ic('external')}รายชื่อวารสาร TCI</a>
+          <a class="btn" href="https://www.scopus.com/sources" target="_blank" rel="noopener">${ic('external')}Scopus Source List</a></div>
+      </form></div></div>`;
+  }
+  async function refreshJournalStats() {
+    const el = $('#journalStats');
+    if (!el) return;
+    try {
+      const s = await journalStats();
+      const total = Object.values(s).reduce((a, b) => a + b, 0);
+      el.innerHTML = total ? Object.entries(JOURNAL_CATS).map(([k, v]) => chip(`${v}: ${fmtInt(s[k] || 0)} ISSN`, k === 'scopus' ? 'success' : 'info')).join(' ')
+        : `<span class="muted">ยังไม่มีรายชื่อวารสาร — ผลงานที่ค้นออนไลน์จะถูกจัดเป็น "ไม่อยู่ในฐาน/ต้องตรวจสอบ" จนกว่าจะนำเข้า</span>`;
+    } catch (e) { el.textContent = 'โหลดสถิติไม่สำเร็จ: ' + e.message; }
   }
 
   // ================= Pages: Guide =================
@@ -1339,7 +1607,7 @@
   function guideRoles() {
     const roles = ['admin', 'chair', 'lecturer', 'executive'];
     return `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>สิทธิ์การใช้งาน</th>${roles.map((r) => `<th>${chip(C.USER_ROLES[r].label, C.USER_ROLES[r].tone)}</th>`).join('')}</tr></thead><tbody>
-      ${C.PERMISSIONS.map((row) => `<tr><td class="cell-title">${esc(row[0])}</td>${row.slice(1).map((v) => `<td>${v === '✓' ? `<span style="color:var(--success)">${ic('check')}</span>` : v === '—' ? '<span class="muted">—</span>' : esc(v)}</td>`).join('')}</tr>`).join('')}
+      ${(adminOnly() ? C.PERMISSIONS_ADMIN_ONLY : C.PERMISSIONS).map((row) => `<tr><td class="cell-title">${esc(row[0])}</td>${row.slice(1).map((v) => `<td>${v === '✓' ? `<span style="color:var(--success)">${ic('check')}</span>` : v === '—' ? '<span class="muted">—</span>' : esc(v)}</td>`).join('')}</tr>`).join('')}
       </tbody></table></div></div>`;
   }
 
@@ -1440,6 +1708,7 @@
         <label class="field"><span>ร้อยละเป้าหมาย ป.ตรี (= 5 คะแนน)</span><input name="t:bachelor" type="number" min="1" value="${s.targets.bachelor}"></label>
         <label class="field"><span>ร้อยละเป้าหมาย ป.โท</span><input name="t:master" type="number" min="1" value="${s.targets.master}"></label>
         <label class="field"><span>ร้อยละเป้าหมาย ป.เอก</span><input name="t:phd" type="number" min="1" value="${s.targets.phd}"></label>
+        <label class="check full"><input type="checkbox" name="adminOnlyEdit" ${s.adminOnlyEdit !== false ? 'checked' : ''}> ผู้ดูแลระบบเป็นผู้จัดการข้อมูลคนเดียว — ประธานหลักสูตร อาจารย์ และผู้บริหาร ดูข้อมูลได้อย่างเดียว (ยกเลิกเพื่อให้ประธานหลักสูตร/อาจารย์ บันทึกและตรวจรับรองผลงานของหลักสูตรตนเองได้)</label>
         <label class="field full"><span>อีเมลผู้ดูแลระบบ <small>(สมัครด้วยอีเมลเหล่านี้จะได้สิทธิ์ Admin ทันทีโดยไม่ต้องรออนุมัติ · บรรทัดละ 1 อีเมล)</small></span>
           <textarea name="adminEmails" rows="3" placeholder="name@mahidol.ac.th">${esc((s.adminEmails || []).join('\n'))}</textarea></label>
       </div></div></div>
@@ -1459,6 +1728,7 @@
         <label class="btn">${ic('upload')}เลือกไฟล์ .json<input type="file" accept="application/json,.json" data-action="restore" hidden></label></div></div>
       <div class="card"><div class="card-head"><h2>${ic('refresh')} ข้อมูลเริ่มต้น</h2></div><div class="card-body"><p class="muted" style="margin-top:0">โหลดข้อมูลตัวอย่าง (หลักสูตร อาจารย์ ผลงาน และบัญชีทดลองทุกบทบาท) เพื่อทดลองระบบ หรือเริ่มระบบใหม่โดยเหลือเฉพาะบัญชีผู้ดูแลระบบ</p>
         <div class="btn-row"><button class="btn" data-action="load-sample">โหลดข้อมูลตัวอย่าง</button><button class="btn danger" data-action="clear-data">${ic('trash')}ล้างข้อมูลทั้งหมด</button></div></div></div>
+      ${journalsCard()}
     </div>`;
   }
 
@@ -1605,6 +1875,38 @@
       }
     },
     'add-external': () => openExternalForm(null),
+    'external-from-lecturer': async (el) => {
+      const qc = view.quick || { level: 'master', std: '2565' };
+      const rec = externalFromLecturer(byId(S.data.lecturers, el.dataset.id), qc.level, qc.std);
+      await upsert('externals', rec);
+      toast(`สร้างแบบตรวจแล้ว — ดึงผลงาน ${rec.pubs.length} รายการจากทะเบียนอาจารย์`);
+      location.hash = '#/external/' + rec.id;
+    },
+    'external-online': async () => {
+      const qc = view.quick || {};
+      const thai = /[\u0E00-\u0E7F]/.test(qc.q);
+      const rec = { id: uid('x'), nameTh: thai ? qc.q : '', nameEn: thai ? '' : qc.q, degreeLevel: 'phd', role: C.EXTERNAL_ROLES[0], examLevel: qc.level || 'master',
+        standard: qc.std || '2565', pubs: [], createdAt: new Date().toISOString(), createdBy: S.user.displayName };
+      if (!rec.nameTh) rec.nameTh = qc.q;
+      await upsert('externals', rec);
+      location.hash = '#/external/' + rec.id;
+      setTimeout(() => openOnlineLookup(byId(S.data.externals, rec.id)), 50);
+    },
+    'external-online-x': (el) => openOnlineLookup(byId(S.data.externals, el.dataset.x)),
+    'pull-lecturer-pubs': async (el) => {
+      const x = byId(S.data.externals, el.dataset.x);
+      const m = mergePubs(x.pubs || [], pubsFromLecturer(byId(S.data.lecturers, el.dataset.id)));
+      await upsert('externals', Object.assign({}, x, { pubs: m.pubs, lecturerId: el.dataset.id }));
+      toast(m.added ? `ดึงผลงานแล้ว ${m.added} รายการ` : 'ผลงานทั้งหมดมีในรายการแล้ว'); render();
+    },
+    'verify-all-pubs': async (el) => {
+      const x = byId(S.data.externals, el.dataset.x);
+      const n = x.pubs.filter((p) => !p.verified).length;
+      if (await confirmBox('ยืนยันทุกรายการ', `ยืนยันผลงานที่ยังไม่ยืนยัน ${n} รายการ ว่าตรวจสอบแล้วและเป็นผลงานของบุคคลนี้จริงใช่หรือไม่?`, 'ยืนยันทั้งหมด')) {
+        await upsert('externals', Object.assign({}, x, { pubs: x.pubs.map((p) => Object.assign({}, p, { verified: true })) }));
+        toast('ยืนยันแล้ว ' + n + ' รายการ'); render();
+      }
+    },
     'edit-external': (el) => openExternalForm(byId(S.data.externals, el.dataset.id)),
     'delete-external': async (el) => {
       const x = byId(S.data.externals, el.dataset.id);
@@ -1723,6 +2025,7 @@
       s.university = fd.university.trim() || s.university;
       s.refYear = parseInt(fd.refYear, 10) || s.refYear;
       s.windowYears = Math.max(1, parseInt(fd.windowYears, 10) || 5);
+      s.adminOnlyEdit = fd.adminOnlyEdit === 'on';
       s.adminEmails = String(fd.adminEmails || '').split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter((x) => EMAIL_RE.test(x));
       Object.keys(fd).forEach((k) => {
         const v = fd[k];
@@ -1731,6 +2034,29 @@
         if (k.startsWith('r:')) { const [, grp, field] = k.split(':'); s.requirements[grp][field] = Math.max(0, parseInt(v, 10) || 0); }
       });
       try { await upsert('settings', s); toast('บันทึกการตั้งค่าแล้ว'); render(); } catch (e) { toast(e.message, 'error'); }
+    }
+    if (ev.target.id === 'quickCheckForm') {
+      ev.preventDefault();
+      const f = ev.target;
+      view.quick = { q: f.q.value.trim(), level: f.level.value, std: f.std.value };
+      render();
+      return;
+    }
+    if (ev.target.id === 'journalImportForm') {
+      ev.preventDefault();
+      const f = ev.target;
+      const file = f.file.files[0];
+      if (!file) return;
+      const btn = $('button[type=submit]', f); btn.disabled = true;
+      try {
+        const rows = parseJournalCsv(await file.text());
+        if (!rows.length) throw new Error('ไม่พบ ISSN ในไฟล์ — ตรวจว่าไฟล์มีคอลัมน์ ISSN (รูปแบบ 1234-5678)');
+        await importJournals(f.category.value, rows, f.replace.checked);
+        toast(`นำเข้า ${fmtInt(rows.length)} ISSN เป็น ${JOURNAL_CATS[f.category.value]} แล้ว`);
+        f.reset(); refreshJournalStats();
+      } catch (e) { toast('นำเข้าไม่สำเร็จ: ' + e.message, 'error'); }
+      finally { btn.disabled = false; }
+      return;
     }
     if (ev.target.id === 'externalCheckForm') {
       ev.preventDefault();
@@ -1812,6 +2138,7 @@
     if (S.remote && S.token) api('logout').catch(() => {});
     S.user = null; S.token = null;
     view.tabs = {}; view.filters = {}; // ผู้ใช้คนถัดไปเริ่มจากหน้าตั้งต้น
+    try { history.replaceState(null, '', '#/dashboard'); } catch (e) {}
     try { sessionStorage.removeItem(SESSION); } catch (e) {}
     boot();
   }

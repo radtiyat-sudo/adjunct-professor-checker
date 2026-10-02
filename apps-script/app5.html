@@ -67,6 +67,8 @@
     return `
       <div class="page-head"><div><h1>ตรวจคุณสมบัติบุคคลภายนอก</h1><p>ผู้ทรงคุณวุฒิภายนอก / กรรมการสอบวิทยานิพนธ์ — ค้นชื่อในฐานข้อมูลและตรวจตามเกณฑ์ 2548 · 2558 · 2565 (อ้างอิงประกาศ ก.พ.อ. 2562)</p></div>
         ${canEditExternal() ? `<button class="btn primary" data-action="add-external">${ic('plus')}ตรวจบุคคลใหม่</button>` : ''}</div>
+      ${readOnlyBanner()}
+      ${quickCheckCard()}
       <div class="card">
         <div class="toolbar">
           <input class="input grow" type="search" placeholder="ค้นหาชื่อ หรือหน่วยงาน…" value="${esc(f.q)}" data-filter="externals.q">
@@ -185,7 +187,8 @@
             <h3>${e.status === 'pass' ? 'ผ่านคุณสมบัติ' : e.status === 'pending' ? 'คุณวุฒิผ่าน — รอยืนยันผลงาน' : 'ไม่ผ่านคุณสมบัติ'} ตาม${esc(e.std.label)} (${esc(EXAM_LEVELS[e.level])})</h3>
             <p>คุณวุฒิ: ${e.degreeOk ? 'ผ่าน' : 'ไม่ผ่าน'} (${esc(DEGREE_LEVELS[x.degreeLevel] || '—')}${x.position ? ', ' + esc(x.position) : ''}) · ผลงาน: ${esc(e.progress)}</p></div></div></div>
           <div class="card"><div class="card-head"><h2>${ic('scale')} ผลการตรวจเทียบเกณฑ์ทุกปี</h2><span class="muted small">★ เกณฑ์ที่หลักสูตรใช้</span></div>${externalMatrix(x)}</div>
-          <div class="card"><div class="card-head"><h2>${ic('doc')} ผลงานที่ตรวจพบ (${pubs.length}) — นานาชาติ ${e.ver.intl} · ชาติ ${e.ver.nat} · ไม่นับ ${e.ver.other}</h2>${edit ? `<button class="btn primary sm" data-action="add-pub" data-x="${x.id}">${ic('plus')}บันทึกผลงาน</button>` : ''}</div>
+          ${edit ? autoFetchCard(x) : ''}
+          <div class="card"><div class="card-head"><h2>${ic('doc')} ผลงานที่ตรวจพบ (${pubs.length}) — นานาชาติ ${e.ver.intl} · ชาติ ${e.ver.nat} · ไม่นับ ${e.ver.other}</h2>${edit ? `<div class="btn-row">${pubs.some((p) => !p.verified) ? `<button class="btn sm" data-action="verify-all-pubs" data-x="${x.id}">${ic('check')}ยืนยันทุกรายการ</button>` : ''}<button class="btn primary sm" data-action="add-pub" data-x="${x.id}">${ic('plus')}บันทึกผลงาน</button></div>` : ''}</div>
             ${pubs.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>ผลงาน</th><th>ปี</th><th>ฐานข้อมูล</th><th>การยืนยัน</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
               : emptyState('search', 'ยังไม่ได้บันทึกผลงาน', 'ใช้ลิงก์ "ค้นหาชื่อในฐานข้อมูล" ด้านขวา แล้วบันทึกผลงานที่พบทีละรายการ')}</div>
           ${edit ? `<div class="card"><div class="card-head"><h2>${ic('shield')} บันทึกผลการตรวจ</h2>${x.checkedAt ? `<span class="muted small">ล่าสุด ${fmtDate(x.checkedAt)} โดย ${esc(x.checkedBy)}</span>` : ''}</div>
@@ -200,6 +203,15 @@
             <dt>ประสบการณ์วิจัย</dt><dd>${x.researchExp ? 'มี' : '—'}</dd><dt>Scopus ID</dt><dd>${esc(x.scopusId || '—')}</dd><dt>ORCID</dt><dd>${esc(x.orcid || '—')}</dd></dl></div>
         </div>
       </div>`;
+  }
+
+  function autoFetchCard(x) {
+    const lecs = findLecturerMatches(x.nameTh).concat(x.nameEn ? findLecturerMatches(x.nameEn) : []).filter((l, i, a) => a.indexOf(l) === i);
+    return `<div class="card"><div class="card-head"><h2>${ic('refresh')} ดึงผลงานอัตโนมัติ</h2><span class="muted small">ไม่ต้องรอเจ้าตัวส่งผลงาน — นับทุกปี</span></div><div class="card-body stack" style="gap:8px">
+      ${lecs.map((l) => `<div class="result-item"><div class="grow"><div class="cell-title">พบในทะเบียนอาจารย์: ${esc(lecturerName(l, true))}</div><div class="meta">${esc(programName(l.programId))} · มีผลงานบันทึกไว้ ${pubsFromLecturer(l).length} รายการ</div></div>
+        <button class="btn sm primary" data-action="pull-lecturer-pubs" data-x="${x.id}" data-id="${l.id}">${ic('download')}ดึงผลงาน</button></div>`).join('')}
+      <div class="btn-row"><button class="btn" data-action="external-online-x" data-x="${x.id}">${ic('search')}ค้นผลงานจากฐานข้อมูลออนไลน์ด้วยชื่อ</button></div>
+      <p class="muted small" style="margin:0">ผลงานที่ดึงจากออนไลน์จะเป็น “รอยืนยัน” — ตรวจแล้วติ๊กยืนยัน หรือกด “ยืนยันทุกรายการ”</p></div></div>`;
   }
 
   function renderExternalReport(id) {
@@ -228,63 +240,4 @@
       <tr><td class="cell-title">ผลงานทางวิชาการ</td>${keys.map((k) => `<td>${esc(C.EXTERNAL_STANDARDS[k][level].text)}</td>`).join('')}</tr></tbody></table></div></div>`;
     return `${table('phd')}${table('master')}
       <div class="card card-pad small muted">การนับในระบบ: <b>ระดับนานาชาติ</b> = Scopus, WoS (SCIE/SSCI/AHCI), PubMed, ERIC, MathSciNet, JSTOR, Project MUSE · <b>ระดับชาติ</b> = TCI กลุ่ม 1–2 · <b>ฐานข้อมูลที่ยอมรับ</b> = ระดับชาติ + นานาชาติ ตามประกาศ ก.พ.อ. พ.ศ. 2562 (<a href="${esc(C.KPA_2562.source)}" target="_blank" rel="noopener">ดูประกาศ</a>) · นับเฉพาะผลงานที่ผู้ตรวจ "ยืนยันแล้ว"</div>`;
-  }
-
-  // ================= Pages: Guide =================
-  function renderGuide() {
-    const tab = view.tabs.guide || 'manual';
-    const T = (k, label) => `<button class="${tab === k ? 'active' : ''}" data-action="tab" data-tab="guide" data-value="${k}">${label}</button>`;
-    let body = '';
-    if (tab === 'manual') body = guideManual();
-    if (tab === 'weights') body = guideWeights();
-    if (tab === 'kpa') body = guideKpa();
-    if (tab === 'roles') body = guideRoles();
-    if (tab === 'external') body = guideExternal();
-    if (tab === 'faq') body = `<div class="faq">${C.FAQ.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div>`;
-    return `<div class="page-head"><div><h1>คู่มือ & เกณฑ์</h1><p>ขั้นตอนการใช้งาน เกณฑ์ ก.พ.อ. 2562 ค่าน้ำหนักคะแนน และคำถามที่พบบ่อย</p></div></div>
-      <div class="tabs">${T('manual', 'ขั้นตอนการใช้งาน')}${T('weights', 'ตารางค่าน้ำหนักคะแนน')}${T('kpa', 'เกณฑ์วารสาร ก.พ.อ. 2562')}${T('external', 'เกณฑ์ผู้ทรงคุณวุฒิภายนอก')}${T('roles', 'สิทธิ์ผู้ใช้งาน')}${T('faq', 'คำถามที่พบบ่อย (FAQ)')}</div>${body}`;
-  }
-
-  function guideManual() {
-    const steps = [
-      ['grid', 'แดชบอร์ดและการแจ้งเตือนอัจฉริยะ', ['การ์ดสรุป: จำนวนหลักสูตร อาจารย์ ผลงานที่นับได้ใน 5 ปี และผลงานรอตรวจ', `แจ้งเตือนสีแดง: อาจารย์ไม่มีผลงานใน ${st().windowYears} ปี / ผลงานยังไม่ถึงเกณฑ์`, `แจ้งเตือนสีส้ม: ผลงานใกล้หมดอายุ (ปี ${windowStart()}) จะไม่ถูกนับในปีประเมินถัดไป`, 'กราฟวงกลมแสดงสัดส่วนฐานข้อมูล และกราฟแท่งแสดงค่าน้ำหนักเฉลี่ยรายหลักสูตร']],
-      ['doc', 'เพิ่ม แก้ไข ลบ ผลงานวิชาการ', ['ไปที่เมนู ผลงานวิชาการ > เพิ่มผลงาน', 'เลือกอาจารย์ ประเภทผลงาน และแหล่งเผยแพร่ (ระบบแสดงค่าน้ำหนักและระดับตามประกาศ ก.พ.อ. ทันที)', 'กรอกปีที่ตีพิมพ์ (พ.ศ./ค.ศ.) — หากเกิน 5 ปี ระบบจะแจ้งเตือนว่าไม่นำมาคิดคะแนน', 'ใส่ลิงก์หลักฐาน/DOI เพื่อให้ผู้ตรวจตรวจสอบได้รวดเร็ว', 'ผลงานใหม่มีสถานะ "รอตรวจสอบ" · อาจารย์แก้ไข/ลบได้จนกว่าจะได้รับการรับรอง']],
-      ['shield', 'การตรวจรับรองผลงาน (Verification Workflow)', ['ประธานหลักสูตร/Admin เปิดเมนู ตรวจรับรองผลงาน', 'กดปุ่ม ตรวจ → ใช้ลิงก์ค้นชื่อผู้แต่งใน Scopus, ThaiJO/TCI, WoS, PubMed, ERIC และตรวจ Quartile ที่ SJR', 'ยืนยัน/แก้ไขประเภทฐานข้อมูลและ Quartile ให้ถูกต้อง', 'กด รับรองผลงาน (นับคะแนนทันที) หรือ ส่งกลับแก้ไข พร้อมเหตุผล — อาจารย์จะเห็นเหตุผลและแก้ไขแล้วส่งตรวจใหม่']],
-      ['users', 'การจัดการข้อมูลอาจารย์และหลักสูตร', ['Admin เพิ่มหลักสูตรและระบุระดับ (ตรี/โท/เอก) — ใช้กำหนดเกณฑ์และค่าเป้าหมาย', 'เพิ่มอาจารย์ ระบุประเภท (ผู้รับผิดชอบหลักสูตร/ประจำหลักสูตร/ประจำ/พิเศษ) และชื่อภาษาอังกฤษเพื่อใช้ค้นฐานข้อมูลสากล', 'หน้าโปรไฟล์อาจารย์แสดงผลการตรวจคุณสมบัติ ผลงานรายปี และลิงก์ค้นหาในฐานข้อมูล', 'สร้างบัญชีผู้ใช้ให้ประธานหลักสูตร (ผูกหลักสูตร) และอาจารย์ (ผูกรายชื่ออาจารย์) ที่ จัดการระบบ > ผู้ใช้งาน']],
-      ['chart', 'การประเมินคุณภาพหลักสูตรและออกรายงาน PDF', ['เมนู ประเมินคุณภาพหลักสูตร แสดงร้อยละผลรวมถ่วงน้ำหนักและคะแนนเต็ม 5 ของทุกหลักสูตร', 'สลับดูผลงานเฉพาะปีประเมิน (ตามคู่มือ QA) หรือสะสม 5 ปี', 'เมนู รายงาน > เลือกรายงานหลักสูตร/รายบุคคล/ภาพรวม > พิมพ์ / บันทึก PDF', 'ในหน้าต่างพิมพ์ เลือกปลายทาง "บันทึกเป็น PDF" (Save as PDF)']],
-    ];
-    return `<div class="stack manual">${steps.map(([icon, title, items], i) => `<div class="card card-pad"><h3 style="margin-top:0;display:flex;gap:10px;align-items:center"><span class="stat-ico tone-primary" style="width:34px;height:34px">${ic(icon)}</span>${i + 1}. ${esc(title)}</h3><ol>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></div>`).join('')}</div>`;
-  }
-
-  function guideWeights() {
-    const W = st().weights;
-    const rows = [];
-    C.CATEGORIES.forEach((c) => {
-      if (c.quartile) C.QUARTILES.forEach((q) => rows.push([`${c.label} — ${q}`, W[c.id + ':' + q], c.kpa]));
-      else rows.push([c.label, W[c.id], c.kpa]);
-    });
-    rows.sort((a, b) => b[1] - a[1]);
-    const tone = (w) => (w >= 1 ? 'success' : w >= 0.6 ? 'info' : w > 0 ? 'warning' : 'danger');
-    return `<div class="card"><div class="card-head"><h2>${ic('scale')} ตารางค่าน้ำหนักผลงานวิชาการ</h2><span class="muted small">ค่าปัจจุบันของระบบ${isAdmin() ? ' · <a href="#/admin" data-action="tab" data-tab="admin" data-value="settings">ปรับค่า</a>' : ''}</span></div>
-      <div class="table-wrap"><table class="table"><thead><tr><th>ประเภทผลงาน / แหล่งเผยแพร่</th><th>ระดับตามประกาศ ก.พ.อ. 2562</th><th class="num">ค่าน้ำหนัก</th></tr></thead><tbody>
-      ${rows.map(([label, w, kpa]) => `<tr><td>${esc(label)}</td><td>${kpa === 'intl' ? chip('นานาชาติ', 'success') : kpa === 'nat' ? chip('ชาติ', 'info') : '<span class="muted">—</span>'}</td><td class="num"><span class="weight-pill tone-${tone(Number(w))}">${fmt(w)}</span></td></tr>`).join('')}
-      </tbody></table></div>
-      <div class="card-body small muted">ค่าเริ่มต้นอ้างอิงคู่มือการประกันคุณภาพการศึกษาภายใน ระดับหลักสูตร (สป.อว./สกอ.) ซึ่งให้ค่าน้ำหนักวารสารในฐาน Scopus/WoS ทุก Quartile เท่ากับ 1.00 — สถาบันสามารถกำหนดค่าน้ำหนักแยกตาม Q1–Q4 เพื่อการบริหารภายในได้ที่ จัดการระบบ > ตั้งค่าเกณฑ์</div></div>`;
-  }
-
-  function guideKpa() {
-    const K = C.KPA_2562;
-    return `<div class="grid two">
-      <div class="card"><div class="card-head"><h2>${ic('book')} วารสารทางวิชาการระดับชาติ</h2></div><div class="card-body"><ul class="clean">${K.national.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div></div>
-      <div class="card"><div class="card-head"><h2>${ic('book')} วารสารทางวิชาการระดับนานาชาติ</h2></div><div class="card-body"><p style="margin-top:0">อยู่ในฐานข้อมูลที่ ก.พ.อ. กำหนด:</p><div class="tag-list">${K.international.map((x) => chip(x, 'success')).join('')}</div></div></div>
-    </div>
-    <div class="card mt"><div class="card-head"><h2>${ic('alert')} ข้อควรระวังในการตรวจสอบ</h2></div><div class="card-body"><ul class="clean">${K.notes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-      <p class="small muted">ที่มา: ${esc(K.title)} — <a href="${esc(K.source)}" target="_blank" rel="noopener">ราชกิจจานุเบกษา ${ic('external')}</a> (สรุปสาระสำคัญเพื่อการใช้งานในระบบ โปรดยึดประกาศฉบับเต็มเป็นหลัก)</p></div></div>`;
-  }
-
-  function guideRoles() {
-    const roles = ['admin', 'chair', 'lecturer', 'executive'];
-    return `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>สิทธิ์การใช้งาน</th>${roles.map((r) => `<th>${chip(C.USER_ROLES[r].label, C.USER_ROLES[r].tone)}</th>`).join('')}</tr></thead><tbody>
-      ${C.PERMISSIONS.map((row) => `<tr><td class="cell-title">${esc(row[0])}</td>${row.slice(1).map((v) => `<td>${v === '✓' ? `<span style="color:var(--success)">${ic('check')}</span>` : v === '—' ? '<span class="muted">—</span>' : esc(v)}</td>`).join('')}</tr>`).join('')}
-      </tbody></table></div></div>`;
   }
