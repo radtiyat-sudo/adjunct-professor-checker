@@ -1,0 +1,222 @@
+  // ================= UI primitives =================
+  function toast(msg, kind) {
+    const el = document.createElement('div');
+    el.className = 'toast' + (kind ? ' ' + kind : '');
+    el.textContent = msg;
+    $('#toasts').appendChild(el);
+    setTimeout(() => el.remove(), 3600);
+  }
+
+  const modal = $('#modal');
+  function openModal({ title, body, submitLabel, danger, onSubmit, wide, footExtra }) {
+    modal.style.width = wide ? 'min(920px, calc(100vw - 32px))' : '';
+    modal.innerHTML = `
+      <form class="modal-form" novalidate>
+        <div class="modal-head"><h2>${esc(title)}</h2><button type="button" class="icon-btn" data-close aria-label="ปิด">${ic('x')}</button></div>
+        <div class="modal-body">${body}</div>
+        <div class="modal-foot">${footExtra || ''}<button type="button" class="btn ghost" data-close>ยกเลิก</button>${onSubmit ? `<button type="submit" class="btn ${danger ? 'danger' : 'primary'}">${esc(submitLabel || 'บันทึก')}</button>` : ''}</div>
+      </form>`;
+    const form = $('form', modal);
+    $$('[data-close]', modal).forEach((b) => b.addEventListener('click', () => modal.close()));
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      if (!onSubmit) return modal.close();
+      if (!form.checkValidity()) { form.reportValidity(); return; }
+      const btn = $('button[type=submit]', form);
+      btn.disabled = true;
+      try {
+        const keep = await onSubmit(Object.fromEntries(new FormData(form).entries()), form);
+        if (keep !== false) modal.close();
+      } catch (e) { toast(e.message || String(e), 'error'); }
+      finally { btn.disabled = false; }
+    });
+    modal.showModal();
+    const first = $('input:not([type=hidden]),select,textarea', modal);
+    if (first) first.focus();
+    return form;
+  }
+  function confirmBox(title, message, label = 'ยืนยัน') {
+    return new Promise((resolve) => {
+      let ok = false;
+      openModal({ title, body: `<p style="margin:0">${message}</p>`, submitLabel: label, danger: true, onSubmit: () => { ok = true; } });
+      modal.addEventListener('close', () => resolve(ok), { once: true });
+    });
+  }
+
+  function emptyState(icon, title, text, action) {
+    return `<div class="empty"><div class="empty-ico tone-primary">${ic(icon)}</div><h3>${esc(title)}</h3><p>${text}</p>${action || ''}</div>`;
+  }
+
+  function donut(items, centerLabel) {
+    const total = items.reduce((s, i) => s + i.value, 0);
+    const r = 15.915, cx = 21, cy = 21;
+    let offset = 25, segs = '';
+    items.filter((i) => i.value > 0).forEach((i) => {
+      const pct = (i.value / total) * 100;
+      segs += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${i.color}" stroke-width="6" stroke-dasharray="${pct} ${100 - pct}" stroke-dashoffset="${offset}"><title>${esc(i.label)}: ${i.value}</title></circle>`;
+      offset -= pct;
+    });
+    const legend = items.filter((i) => i.value > 0).map((i) => `<div class="legend-row"><span class="legend-sw" style="background:${i.color}"></span><span>${esc(i.label)}</span><span class="v">${fmtInt(i.value)}</span></div>`).join('');
+    return `<div class="donut-wrap"><svg class="donut" viewBox="0 0 42 42" role="img" aria-label="${esc(centerLabel)}">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--neutral-soft)" stroke-width="6"/>${segs}
+      <text x="21" y="20.5" text-anchor="middle" font-size="7" font-weight="700" fill="var(--text)">${fmtInt(total)}</text>
+      <text x="21" y="26.5" text-anchor="middle" font-size="3" fill="var(--muted)">${esc(centerLabel)}</text></svg>
+      <div class="legend">${legend || '<span class="muted">ยังไม่มีข้อมูล</span>'}</div></div>`;
+  }
+
+  function lecturerName(l, withPos) {
+    if (!l) return '—';
+    const pos = withPos && l.position ? l.position + ' ' : '';
+    return pos + (l.prefix ? l.prefix : '') + (l.nameTh || l.nameEn || '');
+  }
+  const programName = (id) => { const p = byId(S.data.programs, id); return p ? p.name : '—'; };
+
+  // ================= Navigation =================
+  const ROUTES = {
+    dashboard: { title: 'แดชบอร์ด', icon: 'grid', render: renderDashboard },
+    works: { title: 'ผลงานวิชาการ', icon: 'doc', render: renderWorks },
+    lecturers: { title: 'อาจารย์ประจำหลักสูตร', icon: 'users', render: renderLecturers },
+    lecturer: { title: 'ข้อมูลอาจารย์', render: renderLecturer, hidden: true },
+    externals: { title: 'ตรวจคุณสมบัติบุคคลภายนอก', icon: 'search', render: renderExternals, allow: canSeeExternals },
+    external: { title: 'ผู้ทรงคุณวุฒิภายนอก', render: renderExternal, hidden: true, allow: canSeeExternals },
+    programs: { title: 'หลักสูตร', icon: 'layers', render: renderPrograms },
+    verify: { title: 'ตรวจรับรองผลงาน', icon: 'shield', render: renderVerify, allow: () => isAdmin() || role() === 'chair' },
+    assessment: { title: 'ประเมินคุณภาพหลักสูตร', icon: 'chart', render: renderAssessment, allow: () => role() !== 'lecturer' },
+    reports: { title: 'รายงาน', icon: 'printer', render: renderReports },
+    report: { title: 'รายงาน', render: renderReport, hidden: true },
+    guide: { title: 'คู่มือ & เกณฑ์ ก.พ.อ.', icon: 'book', render: renderGuide },
+    admin: { title: 'จัดการระบบ', icon: 'gear', render: renderAdmin, allow: isAdmin },
+  };
+
+  function buildNav() {
+    const pending = buildAlerts().pending.length;
+    const groups = [
+      ['ภาพรวม', ['dashboard']],
+      ['ข้อมูล', ['works', 'lecturers', 'externals', 'programs']],
+      ['ประเมิน', ['verify', 'assessment', 'reports']],
+      ['ช่วยเหลือ', ['guide', 'admin']],
+    ];
+    $('#nav').innerHTML = groups.map(([g, keys]) => {
+      const links = keys.filter((k) => !ROUTES[k].allow || ROUTES[k].allow()).map((k) => {
+        const count = k === 'verify' && pending ? `<span class="count">${pending}</span>` : '';
+        return `<a href="#/${k}" data-route="${k}">${ic(ROUTES[k].icon)}${esc(ROUTES[k].title)}${count}</a>`;
+      }).join('');
+      return links ? `<div class="nav-sep">${g}</div>${links}` : '';
+    }).join('');
+  }
+
+  function parseRoute() {
+    const parts = (location.hash.replace(/^#\/?/, '') || 'dashboard').split('/');
+    return { name: parts[0], args: parts.slice(1).map(decodeURIComponent) };
+  }
+
+  const view = { tabs: {}, filters: {} };
+
+  function render() {
+    if (!S.user) return;
+    const { name, args } = parseRoute();
+    let r = ROUTES[name];
+    if (!r || (r.allow && !r.allow())) { location.hash = '#/dashboard'; return; }
+    buildNav();
+    const navKey = { lecturer: 'lecturers', report: 'reports', external: 'externals' }[name] || name;
+    $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === navKey));
+    $('#pageTitle').textContent = r.title;
+    document.title = r.title + ' | ' + st().collegeName;
+    const main = $('#main');
+    main.innerHTML = r.render(...args);
+    hydrateIcons(main);
+    closeSidebar();
+  }
+
+  // ================= Pages: Dashboard =================
+  function statCard(label, value, icon, tone, foot) {
+    return `<div class="card stat"><div class="stat-top"><span>${esc(label)}</span><span class="stat-ico tone-${tone}">${ic(icon)}</span></div>
+      <div class="stat-num" style="color:var(--${tone === 'primary' ? 'text' : tone})">${value}</div><div class="stat-foot">${foot}</div></div>`;
+  }
+
+  function renderDashboard() {
+    const lecs = scopeLecturers().filter((l) => l.active !== false);
+    const progs = scopePrograms();
+    const works = scopeWorks();
+    const counted = works.filter(isCountable);
+    const A = buildAlerts();
+    const s = st();
+    const welcome = S.user.displayName || S.user.username;
+    const demo = S.data.settings.demo ? `<div class="alert tone-accent mb">${ic('info')}<div><b>กำลังแสดงข้อมูลตัวอย่าง</b>ผู้ดูแลระบบสามารถล้างข้อมูลตัวอย่างได้ที่ จัดการระบบ &gt; ข้อมูล</div></div>` : '';
+
+    // ข้อมูลกราฟ
+    const inWin = works.filter((w) => inWindow(w) && w.status !== 'rejected');
+    const byCat = C.CATEGORIES.map((c) => ({ label: c.short, color: c.color, value: inWin.filter((w) => w.category === c.id).length }));
+    const progBars = progs.map((p) => {
+      const e = evalProgram(p, 'window');
+      const avg = e.n ? e.sum / e.n : 0;
+      return { p, e, avg };
+    });
+    const maxAvg = Math.max(1, ...progBars.map((b) => b.avg));
+
+    const alertBlocks = [];
+    if (A.noWorks.length) alertBlocks.push(`<div class="alert tone-danger">${ic('xc')}<div><b>อาจารย์ไม่มีผลงานใน ${s.windowYears} ปีย้อนหลัง (${A.noWorks.length} ท่าน)</b>${A.noWorks.slice(0, 6).map((l) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a>`).join(', ')}${A.noWorks.length > 6 ? ' และอื่น ๆ' : ''}</div></div>`);
+    if (A.expiring.length) alertBlocks.push(`<div class="alert tone-warning">${ic('clock')}<div><b>ผลงานใกล้หมดอายุ ${s.windowYears} ปี (ตีพิมพ์ปี ${windowStart()} — จะไม่นับในปี ${s.refYear + 1})</b>${A.expiring.slice(0, 6).map(({ l, e }) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a> (${e.expiring.length} เรื่อง)`).join(', ')}</div></div>`);
+    if (A.failing.length) alertBlocks.push(`<div class="alert tone-danger">${ic('alert')}<div><b>อาจารย์ที่ผลงานยังไม่ถึงเกณฑ์ขั้นต่ำ (${A.failing.length} ท่าน)</b>${A.failing.slice(0, 6).map(({ l, e }) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l))}</a> (${e.counted.length}/${e.req.minWorks})`).join(', ')}</div></div>`);
+    if (A.pending.length && (isAdmin() || role() === 'chair')) alertBlocks.push(`<div class="alert tone-info">${ic('hourglass')}<div><b>ผลงานรอตรวจรับรอง ${A.pending.length} รายการ</b><a href="#/verify">ไปที่หน้าตรวจรับรองผลงาน →</a></div></div>`);
+    if (A.rejected.length) alertBlocks.push(`<div class="alert tone-danger">${ic('edit')}<div><b>ผลงานถูกส่งกลับแก้ไข ${A.rejected.length} รายการ</b><a href="#/works?status=rejected" data-action="filter-works" data-status="rejected">ดูรายการ →</a></div></div>`);
+    if (A.expired.length) alertBlocks.push(`<div class="alert tone-neutral">${ic('info')}<div><b>ผลงานเกิน ${s.windowYears} ปี ${A.expired.length} รายการ</b>ไม่ถูกนำมาคิดคะแนนในปีประเมิน ${s.refYear} (ยังเก็บไว้เป็นประวัติ)</div></div>`);
+
+    const myBlock = role() === 'lecturer' && myLecturer() ? lecturerVerdictCard(myLecturer()) : '';
+
+    return `
+      <section class="hero">
+        <div>
+          <span class="chip">${ic('cap')} ${esc(s.collegeName)} · ปีประเมิน ${s.refYear}</span>
+          <h1 style="margin-top:10px">ยินดีต้อนรับ, ${esc(welcome)}</h1>
+          <p>กำกับ ติดตาม และประเมินผลงานวิชาการอาจารย์ประจำหลักสูตร รอบ ${s.windowYears} ปีย้อนหลัง (${windowStart()}–${s.refYear}) ตามประกาศ ก.พ.อ. พ.ศ. 2562</p>
+        </div>
+        <div class="btn-row">
+          ${canAddWork() ? `<button class="btn primary" data-action="add-work">${ic('plus')}เพิ่มผลงานวิชาการ</button>` : ''}
+          ${canAddLecturer() ? `<button class="btn ghost" data-action="add-lecturer">${ic('user')}เพิ่มอาจารย์</button>` : ''}
+          ${canEditExternal() ? `<button class="btn ghost" data-action="add-external">${ic('search')}ตรวจบุคคลภายนอก</button>` : ''}
+          ${role() !== 'lecturer' ? `<a class="btn ghost" href="#/reports">${ic('printer')}ออกรายงาน</a>` : ''}
+        </div>
+      </section>
+      ${demo}
+      <div class="grid stats">
+        ${statCard('หลักสูตร', fmtInt(progs.length), 'layers', 'primary', `${chip('เปิดสอน', 'primary')} ข้อมูลในระบบ`)}
+        ${statCard('อาจารย์', fmtInt(lecs.length), 'users', 'info', `${chip(lecs.filter((l) => evalLecturer(l).status === 'pass').length + ' ผ่านเกณฑ์', 'success')} จากทั้งหมด`)}
+        ${statCard(`ผลงานที่นับได้ (${s.windowYears} ปี)`, fmtInt(counted.length), 'checkc', 'success', `${chip('รับรองแล้ว', 'success')} นำไปประเมินได้`)}
+        ${statCard('ผลงานรอตรวจสอบ', fmtInt(A.pending.length), 'hourglass', 'warning', `${chip('รอดำเนินการ', 'warning')} ต้องตรวจรับรอง`)}
+      </div>
+      ${myBlock}
+      <div class="card mb">
+        <div class="card-head"><h2>${ic('alert')} การแจ้งเตือนอัจฉริยะ</h2><span class="muted small">อัปเดตตามข้อมูลล่าสุด</span></div>
+        <div class="card-body">${alertBlocks.length ? `<div class="alert-list">${alertBlocks.join('')}</div>` : `<div class="alert tone-success">${ic('checkc')}<div><b>ไม่มีรายการที่ต้องดำเนินการ</b>อาจารย์ทุกท่านมีผลงานตามเกณฑ์</div></div>`}</div>
+      </div>
+      <div class="grid two">
+        <div class="card">
+          <div class="card-head"><h2>${ic('pie')} สัดส่วนผลงานแยกตามฐานข้อมูล</h2><span class="muted small">${windowStart()}–${s.refYear}</span></div>
+          <div class="card-body">${inWin.length ? donut(byCat, 'ผลงาน') : emptyState('pie', 'ยังไม่มีผลงาน', 'เพิ่มผลงานวิชาการเพื่อดูสัดส่วน')}</div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>${ic('chart')} ค่าน้ำหนักผลงานเฉลี่ยต่ออาจารย์ผู้รับผิดชอบ รายหลักสูตร</h2></div>
+          <div class="card-body">${progBars.length ? `<div class="bars">${progBars.map((b) => `
+            <div class="bar-row"><a class="bar-label" href="#/assessment" title="${esc(b.p.name)}">${esc(b.p.name)}</a>
+              <div class="bar-track"><div class="bar-fill" style="width:${(b.avg / maxAvg) * 100}%;background:var(--primary)"></div></div>
+              <div class="bar-val">${fmt(b.avg)}</div></div>`).join('')}</div>
+              <p class="muted small mt">ผลรวมค่าน้ำหนักผลงานที่รับรองแล้วในรอบ ${s.windowYears} ปี ÷ จำนวนอาจารย์ผู้รับผิดชอบหลักสูตร</p>`
+            : emptyState('layers', 'ยังไม่มีหลักสูตร', 'เพิ่มหลักสูตรที่เมนู หลักสูตร')}</div>
+        </div>
+      </div>`;
+  }
+
+  function lecturerVerdictCard(l) {
+    const e = evalLecturer(l);
+    const m = STATUS_META[e.status];
+    const pct = Math.min(100, (e.counted.length / Math.max(1, e.req.minWorks)) * 100);
+    const reqText = `ผลงาน ≥ ${e.req.minWorks} เรื่องใน ${st().windowYears} ปี${e.req.minResearch ? ` (เป็นงานวิจัย ≥ ${e.req.minResearch})` : ''}${e.req.kpaOnly ? ' · เฉพาะวารสารตามประกาศ ก.พ.อ.' : ''}`;
+    return `<div class="card mb"><div class="verdict tone-${m.tone}">
+      <div class="verdict-ico">${ic(m.icon)}</div>
+      <div style="flex:1;min-width:0">
+        <h3>${m.label}</h3>
+        <p>${esc(reqText)} — นับได้ ${e.counted.length} เรื่อง (วิจัย ${e.research})${e.pending.length ? ` · รอรับรอง ${e.pending.length}` : ''}</p>
+        <div class="progress mt" style="background:rgba(255,255,255,.45)"><div style="width:${pct}%;background:currentColor"></div></div>
+      </div></div></div>`;
+  }

@@ -1,0 +1,290 @@
+  // ================= Event handlers =================
+  const ACTIONS = {
+    'toggle-theme': () => {
+      const cur = document.documentElement.dataset.theme;
+      const dark = cur === 'dark' || (cur === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+      const next = dark ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem('mugr.theme', next); } catch (e) {}
+      updateThemeIcon();
+    },
+    logout: () => { logout(); },
+    print: () => window.print(),
+    tab: (el) => { view.tabs[el.dataset.tab] = el.dataset.value; if (el.tagName === 'A' && el.getAttribute('href') !== location.hash) return; render(); },
+    'filter-works': (el, ev) => { ev.preventDefault(); workFilters().status = el.dataset.status; location.hash = '#/works'; render(); },
+    'add-work': (el) => openWorkForm(null, el.dataset.lecturer),
+    'edit-work': (el) => openWorkForm(byId(S.data.works, el.dataset.id)),
+    'view-work': (el) => { const w = byId(S.data.works, el.dataset.id); hydrateIcons(openModal({ title: 'รายละเอียดผลงาน', wide: true, body: workDetailHtml(w) })); },
+    'verify-work': (el) => openVerify(byId(S.data.works, el.dataset.id)),
+    'delete-work': async (el) => {
+      const w = byId(S.data.works, el.dataset.id);
+      if (await confirmBox('ลบผลงาน', `ต้องการลบผลงาน “${esc(w.title)}” ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้`, 'ลบผลงาน')) { await remove('works', w.id); toast('ลบผลงานแล้ว'); render(); }
+    },
+    'add-lecturer': () => openLecturerForm(null),
+    'edit-lecturer': (el) => openLecturerForm(byId(S.data.lecturers, el.dataset.id)),
+    'delete-lecturer': async (el) => {
+      const l = byId(S.data.lecturers, el.dataset.id);
+      const n = worksOf(l.id).length;
+      if (await confirmBox('ลบข้อมูลอาจารย์', `ต้องการลบ “${esc(lecturerName(l))}”${n ? ` และผลงานที่เกี่ยวข้อง ${n} รายการ` : ''} ใช่หรือไม่? <br><span class="muted small">หากอาจารย์ลาออก แนะนำให้แก้ไขเป็น “ไม่ปฏิบัติงาน” แทนเพื่อเก็บประวัติ</span>`, 'ลบ')) {
+        for (const w of worksOf(l.id)) await remove('works', w.id);
+        await remove('lecturers', l.id); toast('ลบข้อมูลอาจารย์แล้ว'); location.hash = '#/lecturers'; render();
+      }
+    },
+    'add-external': () => openExternalForm(null),
+    'edit-external': (el) => openExternalForm(byId(S.data.externals, el.dataset.id)),
+    'delete-external': async (el) => {
+      const x = byId(S.data.externals, el.dataset.id);
+      if (await confirmBox('ลบรายชื่อ', `ต้องการลบ “${esc(lecturerName(x))}” และผลการตรวจทั้งหมดใช่หรือไม่?`, 'ลบ')) { await remove('externals', x.id); toast('ลบแล้ว'); location.hash = '#/externals'; }
+    },
+    'add-pub': (el) => openPubForm(byId(S.data.externals, el.dataset.x)),
+    'edit-pub': (el) => { const x = byId(S.data.externals, el.dataset.x); openPubForm(x, (x.pubs || []).find((p) => p.id === el.dataset.id)); },
+    'delete-pub': async (el) => {
+      const x = byId(S.data.externals, el.dataset.x);
+      if (await confirmBox('ลบผลงาน', 'ต้องการลบผลงานนี้ออกจากรายการตรวจใช่หรือไม่?', 'ลบ')) { await upsert('externals', Object.assign({}, x, { pubs: x.pubs.filter((p) => p.id !== el.dataset.id) })); render(); }
+    },
+    'add-program': () => openProgramForm(null),
+    'edit-program': (el) => openProgramForm(byId(S.data.programs, el.dataset.id)),
+    'delete-program': async (el) => {
+      const p = byId(S.data.programs, el.dataset.id);
+      const n = S.data.lecturers.filter((l) => l.programId === p.id).length;
+      if (n) { toast(`ยังมีอาจารย์ในหลักสูตรนี้ ${n} ท่าน กรุณาย้ายหรือลบก่อน`, 'error'); return; }
+      if (await confirmBox('ลบหลักสูตร', `ต้องการลบหลักสูตร “${esc(p.name)}” ใช่หรือไม่?`, 'ลบ')) { await remove('programs', p.id); toast('ลบหลักสูตรแล้ว'); render(); }
+    },
+    'add-user': () => openUserForm(null),
+    'edit-user': (el) => openUserForm(byId(S.data.users, el.dataset.id)),
+    'delete-user': async (el) => {
+      const u = byId(S.data.users, el.dataset.id);
+      if (await confirmBox('ลบผู้ใช้งาน', `ต้องการลบบัญชี “${esc(u.username)}” ใช่หรือไม่?`, 'ลบ')) { await remove('users', u.id); toast('ลบผู้ใช้แล้ว'); render(); }
+    },
+    'open-lecturer-report': () => { const id = $('#reportLecturer').value; if (id) location.hash = '#/report/lecturer/' + id; },
+    'export-csv': () => exportCsv(),
+    backup: () => {
+      const data = JSON.parse(JSON.stringify(S.data));
+      download(`backup_ผลงานวิชาการ_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), 'application/json');
+    },
+    'load-sample': async () => {
+      if (!(await confirmBox('โหลดข้อมูลตัวอย่าง', 'ข้อมูลปัจจุบันจะถูกแทนที่ด้วยข้อมูลตัวอย่าง (รวมบัญชีผู้ใช้ทดลอง: admin / admin1234) ต้องการดำเนินการต่อหรือไม่?', 'โหลดข้อมูลตัวอย่าง'))) return;
+      await replaceAll(await sampleData());
+      S.user = S.data.users.find((u) => u.role === 'admin');
+      persistSession(); renderUserChip(); toast('โหลดข้อมูลตัวอย่างแล้ว'); render();
+    },
+    'clear-data': async () => {
+      if (!(await confirmBox('ล้างข้อมูลทั้งหมด', 'หลักสูตร อาจารย์ ผลงาน และผู้ใช้อื่นทั้งหมดจะถูกลบ เหลือเฉพาะบัญชีของคุณ แนะนำให้สำรองข้อมูลก่อน', 'ล้างข้อมูล'))) return;
+      const s = Object.assign({}, S.data.settings); delete s.demo;
+      await replaceAll({ programs: [], lecturers: [], works: [], externals: [], users: [S.user], settings: s });
+      toast('ล้างข้อมูลแล้ว'); render();
+    },
+    'reset-weights': () => { const def = defaultSettings().weights; Object.entries(def).forEach(([k, v]) => { const i = $(`[name="w:${k}"]`); if (i) i.value = v; }); toast('คืนค่าเริ่มต้นแล้ว — กดบันทึกเพื่อยืนยัน'); },
+    disconnect: async () => {
+      if (!(await confirmBox('ยกเลิกการเชื่อมต่อ', 'กลับไปใช้ข้อมูลที่เก็บในเครื่องนี้?', 'ยกเลิกการเชื่อมต่อ'))) return;
+      try { localStorage.removeItem('mugr.api'); } catch (e) {}
+      logout();
+    },
+    'push-remote': () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json'; inp.onchange = () => restoreFile(inp.files[0]); inp.click(); },
+  };
+
+  async function restoreFile(file) {
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      if (!data || !Array.isArray(data.works) || !Array.isArray(data.users)) throw new Error('รูปแบบไฟล์ไม่ถูกต้อง');
+      if (!data.users.some((u) => u.role === 'admin')) throw new Error('ไฟล์ต้องมีบัญชีผู้ดูแลระบบอย่างน้อย 1 บัญชี');
+      if (!(await confirmBox('กู้คืนข้อมูล', `แทนที่ข้อมูลปัจจุบันด้วยไฟล์ “${esc(file.name)}” (ผลงาน ${data.works.length} รายการ)?`, 'กู้คืน'))) return;
+      await replaceAll(data);
+      const me = S.data.users.find((u) => u.username === S.user.username);
+      if (!me) { toast('กู้คืนแล้ว — กรุณาเข้าสู่ระบบใหม่'); return logout(); }
+      S.user = me; persistSession(); toast('กู้คืนข้อมูลแล้ว'); render();
+    } catch (e) { toast('กู้คืนไม่สำเร็จ: ' + e.message, 'error'); }
+  }
+
+  document.addEventListener('click', async (ev) => {
+    const el = ev.target.closest('[data-action]');
+    if (el && ACTIONS[el.dataset.action] && el.tagName !== 'INPUT') {
+      if (el.tagName === 'A' && el.dataset.action !== 'tab') ev.preventDefault();
+      try { await ACTIONS[el.dataset.action](el, ev); } catch (e) { toast(e.message || String(e), 'error'); }
+      return;
+    }
+    const row = ev.target.closest('tr[data-href]');
+    if (row && !ev.target.closest('a,button')) location.hash = row.dataset.href;
+  });
+
+  document.addEventListener('change', (ev) => {
+    const t = ev.target;
+    if (t.dataset.action === 'restore') { restoreFile(t.files[0]); t.value = ''; return; }
+    if (t.dataset.action === 'toggle-pub') {
+      const x = byId(S.data.externals, t.dataset.x);
+      upsert('externals', Object.assign({}, x, { pubs: x.pubs.map((p) => (p.id === t.dataset.id ? Object.assign({}, p, { verified: t.checked }) : p)) }))
+        .then(render).catch((e) => toast(e.message, 'error'));
+      return;
+    }
+    if (t.dataset.filter && t.tagName === 'SELECT') applyFilter(t);
+  });
+  let filterTimer;
+  document.addEventListener('input', (ev) => {
+    const t = ev.target;
+    if (t.dataset.filter && t.tagName === 'INPUT') { clearTimeout(filterTimer); filterTimer = setTimeout(() => applyFilter(t, true), 200); }
+  });
+  function applyFilter(t, keepFocus) {
+    const [page, key] = t.dataset.filter.split('.');
+    (view.filters[page] = view.filters[page] || {})[key] = t.value;
+    const pos = t.selectionStart;
+    render();
+    if (keepFocus) { const n = $(`[data-filter="${t.dataset.filter}"]`); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) {} } }
+  }
+
+  document.addEventListener('submit', async (ev) => {
+    if (ev.target.id === 'settingsForm') {
+      ev.preventDefault();
+      const fd = Object.fromEntries(new FormData(ev.target).entries());
+      const s = JSON.parse(JSON.stringify(st()));
+      s.collegeName = fd.collegeName.trim() || s.collegeName;
+      s.university = fd.university.trim() || s.university;
+      s.refYear = parseInt(fd.refYear, 10) || s.refYear;
+      s.windowYears = Math.max(1, parseInt(fd.windowYears, 10) || 5);
+      Object.keys(fd).forEach((k) => {
+        const v = fd[k];
+        if (k.startsWith('w:')) s.weights[k.slice(2)] = Math.max(0, parseFloat(v) || 0);
+        if (k.startsWith('t:')) s.targets[k.slice(2)] = Math.max(1, parseFloat(v) || 1);
+        if (k.startsWith('r:')) { const [, grp, field] = k.split(':'); s.requirements[grp][field] = Math.max(0, parseInt(v, 10) || 0); }
+      });
+      try { await upsert('settings', s); toast('บันทึกการตั้งค่าแล้ว'); render(); } catch (e) { toast(e.message, 'error'); }
+    }
+    if (ev.target.id === 'externalCheckForm') {
+      ev.preventDefault();
+      const x = byId(S.data.externals, ev.target.dataset.id);
+      const e = evalExternal(x);
+      try {
+        await upsert('externals', Object.assign({}, x, { checkNote: ev.target.checkNote.value.trim(), checkResult: e.status, checkedBy: S.user.displayName || S.user.username, checkedAt: new Date().toISOString() }));
+        toast('บันทึกผลการตรวจแล้ว'); render();
+      } catch (err) { toast(err.message, 'error'); }
+    }
+    if (ev.target.id === 'apiForm') {
+      ev.preventDefault();
+      const url = ev.target.apiUrl.value.trim();
+      if (url && !/^https:\/\/script\.google\.com\//.test(url)) { toast('URL ต้องขึ้นต้นด้วย https://script.google.com/', 'error'); return; }
+      try { if (url) localStorage.setItem('mugr.api', url); else localStorage.removeItem('mugr.api'); } catch (e) {}
+      toast('บันทึกแล้ว — กรุณาเข้าสู่ระบบด้วยบัญชีใน Google Sheets');
+      logout();
+    }
+  });
+
+  // Global search
+  const searchInput = $('#globalSearch');
+  const searchPop = $('#searchPop');
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.trim().toLowerCase();
+    if (!q) { searchPop.hidden = true; return; }
+    const lecs = scopeLecturers().filter((l) => [l.prefix, l.nameTh, l.nameEn].join(' ').toLowerCase().includes(q)).slice(0, 6);
+    const works = scopeWorks().filter((w) => String(w.title).toLowerCase().includes(q)).slice(0, 5);
+    searchPop.innerHTML = (lecs.map((l) => `<a href="#/lecturer/${l.id}">${esc(lecturerName(l, true))}<small>${esc(programName(l.programId))}</small></a>`).join('') +
+      works.map((w) => `<a href="#/lecturer/${w.lecturerId}">${esc(w.title)}<small>ผลงาน · ${toBE(w.year)}</small></a>`).join('')) || '<div class="muted small" style="padding:8px">ไม่พบผลลัพธ์</div>';
+    searchPop.hidden = false;
+  });
+  searchInput.addEventListener('blur', () => setTimeout(() => { searchPop.hidden = true; }, 150));
+  searchPop.addEventListener('click', () => { searchInput.value = ''; searchPop.hidden = true; });
+
+  // Mobile sidebar
+  function closeSidebar() { $('#sidebar').classList.remove('open'); $('#scrim').hidden = true; }
+  $('#menuBtn').addEventListener('click', () => { $('#sidebar').classList.add('open'); $('#scrim').hidden = false; });
+  $('#scrim').addEventListener('click', closeSidebar);
+
+  function updateThemeIcon() {
+    const cur = document.documentElement.dataset.theme;
+    const dark = cur === 'dark' || (cur === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+    $$('[data-action="toggle-theme"]').forEach((b) => { b.innerHTML = svg(dark ? 'sun' : 'moon'); b.title = dark ? 'สลับเป็นโหมดสว่าง' : 'สลับเป็นโหมดมืด'; });
+  }
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeIcon);
+
+  // ================= Auth =================
+  function persistSession() {
+    try { sessionStorage.setItem(SESSION, JSON.stringify({ userId: S.user.id, token: S.token })); } catch (e) {}
+  }
+  function renderUserChip() {
+    const u = S.user;
+    $('#userChip').innerHTML = `<div class="avatar">${esc(initials(u.displayName))}</div><div style="min-width:0"><div class="n">${esc(u.displayName)}</div><div class="r">${esc(C.USER_ROLES[u.role].label)}</div></div>`;
+    $('#syncState').textContent = S.remote ? 'เชื่อมต่อ Google Sheets' : 'บันทึกในเครื่องนี้';
+    $('#syncState').classList.toggle('online', S.remote);
+  }
+  function showApp() {
+    $('#loginView').hidden = true;
+    $('#appView').hidden = false;
+    renderUserChip();
+    hydrateIcons();
+    updateThemeIcon();
+    render();
+  }
+  function showLogin() {
+    $('#appView').hidden = true;
+    $('#loginView').hidden = false;
+    hydrateIcons();
+    updateThemeIcon();
+    const demo = !S.remote && S.data && S.data.settings.demo;
+    $('#loginHint').innerHTML = S.remote ? 'เชื่อมต่อฐานข้อมูล Google Sheets' : demo
+      ? 'บัญชีทดลอง: <code>admin</code> / <code>admin1234</code> · <code>chair</code> / <code>chair1234</code> · <code>lecturer</code> / <code>lecturer1234</code> · <code>exec</code> / <code>exec1234</code>'
+      : 'ข้อมูลเก็บในเบราว์เซอร์ของเครื่องนี้';
+    $('#loginForm').username.focus();
+  }
+  function logout() {
+    if (S.remote && S.token) api('logout').catch(() => {});
+    S.user = null; S.token = null;
+    try { sessionStorage.removeItem(SESSION); } catch (e) {}
+    boot();
+  }
+
+  $('#loginForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    const username = f.username.value.trim().toLowerCase();
+    const err = $('#loginError');
+    err.hidden = true;
+    const btn = $('button[type=submit]', f);
+    btn.disabled = true;
+    try {
+      const passwordHash = await hashPw(username, f.password.value);
+      if (S.remote) {
+        const r = await api('login', { username, passwordHash });
+        S.token = r.token; S.user = r.user; S.data = normalize(r.data);
+      } else {
+        const u = S.data.users.find((x) => x.username === username);
+        if (!u || u.passwordHash !== passwordHash) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+        S.user = u;
+      }
+      persistSession();
+      f.reset();
+      if (!location.hash) location.hash = '#/dashboard';
+      showApp();
+    } catch (e) {
+      err.textContent = e.message || 'เข้าสู่ระบบไม่สำเร็จ';
+      err.hidden = false;
+    } finally { btn.disabled = false; }
+  });
+
+  async function boot() {
+    S.remote = isGas() || !!apiUrl();
+    let session = null;
+    try { session = JSON.parse(sessionStorage.getItem(SESSION) || 'null'); } catch (e) {}
+    if (S.remote) {
+      if (session && session.token) {
+        try {
+          S.token = session.token;
+          const r = await api('load');
+          S.data = normalize(r.data); S.user = r.user;
+          return showApp();
+        } catch (e) { S.token = null; }
+      }
+      S.data = normalize({});
+      return showLogin();
+    }
+    S.data = loadLocal();
+    if (!S.data) { S.data = normalize(await sampleData()); saveLocal(); }
+    if (session && session.userId) {
+      S.user = byId(S.data.users, session.userId) || null;
+      if (S.user) return showApp();
+    }
+    showLogin();
+  }
+
+  window.addEventListener('hashchange', render);
+  window.addEventListener('storage', (e) => { if (e.key === KEY && !S.remote && S.user) { S.data = loadLocal(); render(); } });
+  boot();
+})();

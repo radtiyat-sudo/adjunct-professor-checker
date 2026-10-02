@@ -1,0 +1,290 @@
+  // ================= Pages: External experts (ตรวจคุณสมบัติบุคคลภายนอก) =================
+  const EXAM_LEVELS = { master: 'ปริญญาโท', phd: 'ปริญญาเอก' };
+  const DEGREE_LEVELS = { phd: 'ปริญญาเอกหรือเทียบเท่า', master: 'ปริญญาโท', bachelor: 'ปริญญาตรี' };
+
+  function pubCounts(list) {
+    return {
+      intl: list.filter((p) => catOf(p.category).kpa === 'intl').length,
+      nat: list.filter((p) => catOf(p.category).kpa === 'nat').length,
+      other: list.filter((p) => !catOf(p.category).kpa).length,
+      total: list.length,
+    };
+  }
+
+  // ประเมินคุณสมบัติตามเกณฑ์ปีที่กำหนด (2548/2558/2565) และระดับการสอบ (โท/เอก)
+  function evalExternal(x, stdKey, level) {
+    stdKey = stdKey || x.standard || '2565';
+    level = level || x.examLevel || 'master';
+    const std = C.EXTERNAL_STANDARDS[stdKey];
+    const rule = std[level];
+    const highPos = ['รองศาสตราจารย์', 'ศาสตราจารย์'].includes(x.position);
+    const degreeOk = x.degreeLevel === 'phd' || (stdKey === '2548' && x.degreeLevel === 'master' && highPos);
+    const pubs = x.pubs || [];
+    const ver = pubCounts(pubs.filter((p) => p.verified));
+    const all = pubCounts(pubs);
+    const meets = (c) => {
+      if (rule.rule === 'research') return !!x.researchExp || c.total > 0;
+      if (rule.rule === 'intl') return c.intl >= rule.intl;
+      if (rule.rule === 'natOrIntl') return c.intl >= rule.intl || c.nat + c.intl >= rule.nat;
+      return c.intl + c.nat >= rule.min;
+    };
+    const progress = (c) => {
+      if (rule.rule === 'research') return x.researchExp || c.total ? 'มีประสบการณ์ทำวิจัย' : 'ยังไม่พบหลักฐานการทำวิจัย';
+      if (rule.rule === 'intl') return `นานาชาติ ${c.intl}/${rule.intl}`;
+      if (rule.rule === 'natOrIntl') return `ชาติ+นานาชาติ ${c.nat + c.intl}/${rule.nat} หรือ นานาชาติ ${c.intl}/${rule.intl}`;
+      return `ฐานที่ยอมรับ ${c.intl + c.nat}/${rule.min}`;
+    };
+    const worksOk = meets(ver);
+    const worksPending = !worksOk && meets(all);
+    const status = degreeOk && worksOk ? 'pass' : degreeOk && worksPending ? 'pending' : 'fail';
+    return { std, rule, degreeOk, worksOk, worksPending, status, ver, all, progress: progress(ver), stdKey, level };
+  }
+
+  function scopeExternals() {
+    const all = S.data.externals;
+    if (role() === 'chair') return all.filter((x) => !x.programId || x.programId === S.user.programId);
+    return canSeeExternals() ? all : [];
+  }
+
+  function renderExternals() {
+    const f = view.filters.externals || (view.filters.externals = { q: '', status: '' });
+    let list = scopeExternals().map((x) => ({ x, e: evalExternal(x) }));
+    const q = f.q.trim().toLowerCase();
+    if (q) list = list.filter(({ x }) => [x.prefix, x.nameTh, x.nameEn, x.affiliation].join(' ').toLowerCase().includes(q));
+    if (f.status) list = list.filter(({ e }) => e.status === f.status);
+    list.sort((a, b) => String(b.x.updatedAt).localeCompare(String(a.x.updatedAt)));
+    const rows = list.map(({ x, e }) => {
+      const m = STATUS_META[e.status];
+      return `<tr class="row-link" data-href="#/external/${x.id}">
+        <td><div class="person-cell"><div class="avatar sm">${esc(initials(x.nameTh))}</div><div><div class="cell-title">${esc(lecturerName(x, true))}</div><div class="cell-sub">${esc(x.affiliation || x.nameEn || '')}</div></div></div></td>
+        <td>${esc(x.role || '—')}<div class="cell-sub">${x.programId ? esc(programName(x.programId)) : ''}</div></td>
+        <td>${esc(EXAM_LEVELS[x.examLevel] || '—')}<div class="cell-sub">${esc(e.std.label)}</div></td>
+        <td class="num">${e.ver.intl}/${e.ver.nat}</td>
+        <td>${chip(m.label === 'ผ่านเกณฑ์' ? 'ผ่านคุณสมบัติ' : m.label === 'รอรับรองผลงาน' ? 'รอยืนยันผลงาน' : 'ไม่ผ่านคุณสมบัติ', m.tone, true)}</td>
+        <td class="cell-sub">${x.checkedAt ? fmtDate(x.checkedAt) + '<br>' + esc(x.checkedBy || '') : '—'}</td>
+      </tr>`;
+    }).join('');
+    return `
+      <div class="page-head"><div><h1>ตรวจคุณสมบัติบุคคลภายนอก</h1><p>ผู้ทรงคุณวุฒิภายนอก / กรรมการสอบวิทยานิพนธ์ — ค้นชื่อในฐานข้อมูลและตรวจตามเกณฑ์ 2548 · 2558 · 2565 (อ้างอิงประกาศ ก.พ.อ. 2562)</p></div>
+        ${canEditExternal() ? `<button class="btn primary" data-action="add-external">${ic('plus')}ตรวจบุคคลใหม่</button>` : ''}</div>
+      <div class="card">
+        <div class="toolbar">
+          <input class="input grow" type="search" placeholder="ค้นหาชื่อ หรือหน่วยงาน…" value="${esc(f.q)}" data-filter="externals.q">
+          <select class="input" data-filter="externals.status"><option value="">ทุกผลการตรวจ</option>${opt('pass', 'ผ่านคุณสมบัติ', f.status)}${opt('pending', 'รอยืนยันผลงาน', f.status)}${opt('fail', 'ไม่ผ่านคุณสมบัติ', f.status)}</select>
+        </div>
+        ${list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>ชื่อ - สกุล / หน่วยงาน</th><th>บทบาทที่เชิญ</th><th>ระดับ / เกณฑ์</th><th class="num">นานาชาติ/ชาติ</th><th>ผลการตรวจ</th><th>ตรวจเมื่อ</th></tr></thead><tbody>${rows}</tbody></table></div>`
+          : emptyState('search', 'ยังไม่มีรายชื่อบุคคลภายนอก', 'เพิ่มรายชื่อผู้ทรงคุณวุฒิที่จะเชิญ แล้วค้นหาผลงานในฐานข้อมูลเพื่อตรวจคุณสมบัติ', canEditExternal() ? `<button class="btn primary" data-action="add-external">${ic('plus')}ตรวจบุคคลใหม่</button>` : '')}
+      </div>`;
+  }
+
+  function openExternalForm(x) {
+    const editing = !!x;
+    x = x || { examLevel: 'master', standard: '2565', degreeLevel: 'phd', role: C.EXTERNAL_ROLES[0], programId: role() === 'chair' ? S.user.programId : '', pubs: [] };
+    const progs = role() === 'chair' ? scopePrograms() : S.data.programs;
+    openModal({
+      title: editing ? 'แก้ไขข้อมูลบุคคลภายนอก' : 'ตรวจคุณสมบัติบุคคลภายนอก', wide: true,
+      body: `<div class="form-grid">
+        <label class="field"><span>คำนำหน้า</span><input name="prefix" value="${esc(x.prefix)}" placeholder="เช่น ดร., นาย, Dr."></label>
+        <label class="field"><span>ตำแหน่งทางวิชาการ</span><select name="position">${C.ACADEMIC_POSITIONS.map((p) => opt(p, p || '— ไม่มี —', x.position || '')).join('')}</select></label>
+        <label class="field"><span>ชื่อ - สกุล (ไทย) <em>*</em></span><input name="nameTh" required value="${esc(x.nameTh)}"></label>
+        <label class="field"><span>ชื่อภาษาอังกฤษ <small>(ใช้ค้น Scopus/WoS)</small></span><input name="nameEn" value="${esc(x.nameEn)}" placeholder="Firstname Lastname"></label>
+        <label class="field full"><span>หน่วยงาน / สถาบันต้นสังกัด</span><input name="affiliation" value="${esc(x.affiliation)}"></label>
+        <label class="field"><span>วุฒิการศึกษาสูงสุด <em>*</em></span><select name="degreeLevel">${Object.entries(DEGREE_LEVELS).map(([k, v]) => opt(k, v, x.degreeLevel)).join('')}</select></label>
+        <label class="field"><span>ชื่อปริญญา / สาขา</span><input name="degreeName" value="${esc(x.degreeName)}" placeholder="เช่น Ph.D. (Epidemiology)"></label>
+        <label class="field"><span>บทบาทที่เชิญ</span><select name="role">${C.EXTERNAL_ROLES.map((r) => opt(r, r, x.role)).join('')}</select></label>
+        <label class="field"><span>หลักสูตรที่เชิญ</span><select name="programId"><option value="">— ไม่ระบุ —</option>${progs.map((p) => opt(p.id, p.name, x.programId)).join('')}</select></label>
+        <label class="field"><span>ระดับการสอบ / หลักสูตร</span><select name="examLevel">${Object.entries(EXAM_LEVELS).map(([k, v]) => opt(k, v, x.examLevel)).join('')}</select></label>
+        <label class="field"><span>เกณฑ์มาตรฐานที่หลักสูตรใช้</span><select name="standard">${Object.entries(C.EXTERNAL_STANDARDS).map(([k, v]) => opt(k, v.label, x.standard)).join('')}</select></label>
+        <label class="field"><span>Scopus Author ID</span><input name="scopusId" value="${esc(x.scopusId)}" inputmode="numeric"></label>
+        <label class="field"><span>ORCID</span><input name="orcid" value="${esc(x.orcid)}"></label>
+        <label class="check full"><input type="checkbox" name="researchExp" ${x.researchExp ? 'checked' : ''}> มีประสบการณ์ทำวิจัยที่ไม่ใช่ส่วนหนึ่งของการศึกษาเพื่อรับปริญญา (ใช้กับเกณฑ์ 2548)</label>
+      </div>`,
+      onSubmit: async (v) => {
+        const rec = Object.assign({ pubs: [] }, x, { id: x.id || uid('x') });
+        ['prefix', 'position', 'nameTh', 'nameEn', 'affiliation', 'degreeLevel', 'degreeName', 'role', 'programId', 'examLevel', 'standard', 'scopusId', 'orcid'].forEach((k) => { rec[k] = (v[k] || '').trim(); });
+        rec.researchExp = v.researchExp === 'on';
+        if (!editing) { rec.createdAt = new Date().toISOString(); rec.createdBy = S.user.displayName; }
+        await upsert('externals', rec);
+        toast(editing ? 'บันทึกแล้ว' : 'เพิ่มรายชื่อแล้ว — ค้นหาผลงานในฐานข้อมูลต่อได้เลย');
+        if (!editing) location.hash = '#/external/' + rec.id; else render();
+      },
+    });
+  }
+
+  function openPubForm(x, pub) {
+    const editing = !!pub;
+    pub = pub || { category: 'scopus', verified: true };
+    const form = openModal({
+      title: editing ? 'แก้ไขผลงาน' : 'บันทึกผลงานที่พบในฐานข้อมูล', wide: true,
+      body: `<div class="form-grid">
+        <label class="field full"><span>ชื่อผลงาน <em>*</em></span><textarea name="title" rows="2" required>${esc(pub.title)}</textarea></label>
+        <label class="field full"><span>ฐานข้อมูลที่พบ <em>*</em></span><select name="category" data-live="pub">${C.CATEGORIES.filter((c) => c.journal || /^proc/.test(c.id)).map((c) => opt(c.id, c.label, pub.category)).join('')}</select></label>
+        <label class="field"><span>ชื่อวารสาร</span><input name="journal" value="${esc(pub.journal)}"></label>
+        <label class="field"><span>ISSN</span><input name="issn" value="${esc(pub.issn)}"></label>
+        <label class="field"><span>ปีที่ตีพิมพ์ (พ.ศ./ค.ศ.)</span><input name="year" inputmode="numeric" value="${esc(pub.year)}"></label>
+        <label class="field"><span>Quartile</span><select name="quartile"><option value="">ไม่ระบุ</option>${C.QUARTILES.map((q) => opt(q, q, pub.quartile)).join('')}</select></label>
+        <label class="field full"><span>ลิงก์หลักฐาน / DOI</span><input name="url" value="${esc(pub.url)}" placeholder="https:// หรือ 10.xxxx/…"></label>
+        <label class="check full"><input type="checkbox" name="verified" ${pub.verified ? 'checked' : ''}> ยืนยันแล้ว — ตรวจพบในฐานข้อมูลจริง และวารสารอยู่ในฐานในปีที่ตีพิมพ์</label>
+      </div><div class="mt" id="pubHint"></div>`,
+      onSubmit: async (v) => {
+        const p = Object.assign({}, pub, { id: pub.id || uid('pub'), title: v.title.trim(), category: v.category, journal: v.journal.trim(), issn: v.issn.trim(),
+          year: v.year ? toBE(v.year) : '', quartile: v.quartile, url: v.url.trim(), verified: v.verified === 'on' });
+        const rec = Object.assign({}, x, { pubs: (x.pubs || []).filter((y) => y.id !== p.id).concat(p) });
+        await upsert('externals', rec);
+        toast('บันทึกผลงานแล้ว');
+        render();
+      },
+    });
+    const hint = () => {
+      const c = catOf(form.category.value);
+      $('#pubHint', form).innerHTML = c.kpa === 'intl' ? `<div class="alert tone-success">${ic('checkc')}<div><b>นับเป็นผลงานระดับนานาชาติ</b>ฐานข้อมูลตามประกาศ ก.พ.อ. 2562</div></div>`
+        : c.kpa === 'nat' ? `<div class="alert tone-info">${ic('checkc')}<div><b>นับเป็นผลงานระดับชาติ</b>TCI กลุ่ม 1–2 ตามประกาศ ก.พ.อ. 2562</div></div>`
+        : `<div class="alert tone-danger">${ic('xc')}<div><b>ไม่นับเป็นผลงานในฐานข้อมูลที่ยอมรับ</b>นับได้เฉพาะ "ประสบการณ์ทำวิจัย" ตามเกณฑ์ 2548</div></div>`;
+      hydrateIcons($('#pubHint', form));
+    };
+    form.category.addEventListener('change', hint); hint();
+  }
+
+  function externalMatrix(x) {
+    const level = x.examLevel || 'master';
+    const keys = Object.keys(C.EXTERNAL_STANDARDS);
+    const evs = keys.map((k) => evalExternal(x, k, level));
+    const cell = (ok, pending, text) => `<td><div style="display:flex;gap:8px;align-items:flex-start"><span style="color:var(--${ok ? 'success' : pending ? 'warning' : 'danger'});flex:none">${ic(ok ? 'checkc' : pending ? 'hourglass' : 'xc')}</span><span>${text}</span></div></td>`;
+    return `<div class="table-wrap"><table class="table"><thead><tr><th>คุณสมบัติ (${esc(EXAM_LEVELS[level])})</th>${keys.map((k) => `<th${k === (x.standard || '2565') ? ' style="color:var(--primary)"' : ''}>${esc(C.EXTERNAL_STANDARDS[k].label)}${k === (x.standard || '2565') ? ' ★' : ''}</th>`).join('')}</tr></thead><tbody>
+      <tr><td class="cell-title">คุณวุฒิ</td>${evs.map((e) => cell(e.degreeOk, false, `${esc(e.std.degree)}`)).join('')}</tr>
+      <tr><td class="cell-title">ผลงานทางวิชาการ</td>${evs.map((e) => cell(e.worksOk, e.worksPending, `${esc(e.rule.text)}<div class="cell-sub">${esc(e.progress)}</div>`)).join('')}</tr>
+      <tr><td class="cell-title">สรุป</td>${evs.map((e) => `<td>${chip(e.status === 'pass' ? 'ผ่าน' : e.status === 'pending' ? 'รอยืนยันผลงาน' : 'ไม่ผ่าน', STATUS_META[e.status].tone, true)}</td>`).join('')}</tr>
+      </tbody></table></div>`;
+  }
+
+  function renderExternal(id) {
+    const x = byId(scopeExternals(), id);
+    if (!x) return emptyState('user', 'ไม่พบข้อมูล', 'อาจถูกลบหรือคุณไม่มีสิทธิ์เข้าถึง', '<a class="btn" href="#/externals">กลับ</a>');
+    const e = evalExternal(x);
+    const m = STATUS_META[e.status];
+    const edit = canEditExternal();
+    const pubs = (x.pubs || []).slice().sort((a, b) => (toBE(b.year) || 0) - (toBE(a.year) || 0));
+    const rows = pubs.map((p, i) => {
+      const c = catOf(p.category);
+      return `<tr><td>${i + 1}</td><td><div class="cell-title">${esc(p.title)}</div><div class="cell-sub">${esc(p.journal || '')}${p.issn ? ' · ISSN ' + esc(p.issn) : ''}${p.url ? ` · <a href="${esc(/^10\./.test(p.url) ? 'https://doi.org/' + p.url : p.url)}" target="_blank" rel="noopener">หลักฐาน</a>` : ''}</div></td>
+        <td class="nowrap">${esc(p.year || '—')}</td>
+        <td><span class="chip" style="background:${c.color}22;color:${c.color}">${esc(c.short)}${p.quartile ? ' ' + esc(p.quartile) : ''}</span><div class="cell-sub">${c.kpa === 'intl' ? 'นานาชาติ' : c.kpa === 'nat' ? 'ชาติ' : 'ไม่นับ'}</div></td>
+        <td>${edit ? `<label class="check"><input type="checkbox" data-action="toggle-pub" data-x="${x.id}" data-id="${p.id}" ${p.verified ? 'checked' : ''}>${p.verified ? 'ยืนยันแล้ว' : 'รอยืนยัน'}</label>` : chip(p.verified ? 'ยืนยันแล้ว' : 'รอยืนยัน', p.verified ? 'success' : 'warning')}</td>
+        <td class="actions">${edit ? `<button class="btn sm" data-action="edit-pub" data-x="${x.id}" data-id="${p.id}">${ic('edit')}</button><button class="btn sm danger" data-action="delete-pub" data-x="${x.id}" data-id="${p.id}">${ic('trash')}</button>` : ''}</td></tr>`;
+    }).join('');
+    const links = C.searchLinks(x);
+    return `
+      <div class="page-head no-print"><a href="#/externals" class="btn ghost sm">← กลับ</a>
+        <div class="btn-row">${edit ? `<button class="btn" data-action="edit-external" data-id="${x.id}">${ic('edit')}แก้ไขข้อมูล</button><button class="btn danger" data-action="delete-external" data-id="${x.id}">${ic('trash')}</button>` : ''}<a class="btn" href="#/report/external/${x.id}">${ic('printer')}พิมพ์แบบตรวจสอบ</a></div></div>
+      <div class="grid side">
+        <div class="stack">
+          <div class="card card-pad"><div class="profile-head"><div class="avatar">${esc(initials(x.nameTh))}</div><div>
+            <h1 style="font-size:21px">${esc(lecturerName(x, true))}</h1><div class="muted">${esc(x.nameEn || '')}${x.affiliation ? ' · ' + esc(x.affiliation) : ''}</div>
+            <div class="tag-list" style="margin-top:6px">${chip(x.role || 'ผู้ทรงคุณวุฒิภายนอก', 'primary')}${chip('สอบ' + (EXAM_LEVELS[x.examLevel] || ''), 'neutral')}${chip(e.std.label, 'accent')}${x.programId ? chip(programName(x.programId), 'neutral') : ''}</div></div></div></div>
+          <div class="card"><div class="verdict tone-${m.tone}"><div class="verdict-ico">${ic(m.icon)}</div><div>
+            <h3>${e.status === 'pass' ? 'ผ่านคุณสมบัติ' : e.status === 'pending' ? 'คุณวุฒิผ่าน — รอยืนยันผลงาน' : 'ไม่ผ่านคุณสมบัติ'} ตาม${esc(e.std.label)} (${esc(EXAM_LEVELS[e.level])})</h3>
+            <p>คุณวุฒิ: ${e.degreeOk ? 'ผ่าน' : 'ไม่ผ่าน'} (${esc(DEGREE_LEVELS[x.degreeLevel] || '—')}${x.position ? ', ' + esc(x.position) : ''}) · ผลงาน: ${esc(e.progress)}</p></div></div></div>
+          <div class="card"><div class="card-head"><h2>${ic('scale')} ผลการตรวจเทียบเกณฑ์ทุกปี</h2><span class="muted small">★ เกณฑ์ที่หลักสูตรใช้</span></div>${externalMatrix(x)}</div>
+          <div class="card"><div class="card-head"><h2>${ic('doc')} ผลงานที่ตรวจพบ (${pubs.length}) — นานาชาติ ${e.ver.intl} · ชาติ ${e.ver.nat} · ไม่นับ ${e.ver.other}</h2>${edit ? `<button class="btn primary sm" data-action="add-pub" data-x="${x.id}">${ic('plus')}บันทึกผลงาน</button>` : ''}</div>
+            ${pubs.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>ผลงาน</th><th>ปี</th><th>ฐานข้อมูล</th><th>การยืนยัน</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+              : emptyState('search', 'ยังไม่ได้บันทึกผลงาน', 'ใช้ลิงก์ "ค้นหาชื่อในฐานข้อมูล" ด้านขวา แล้วบันทึกผลงานที่พบทีละรายการ')}</div>
+          ${edit ? `<div class="card"><div class="card-head"><h2>${ic('shield')} บันทึกผลการตรวจ</h2>${x.checkedAt ? `<span class="muted small">ล่าสุด ${fmtDate(x.checkedAt)} โดย ${esc(x.checkedBy)}</span>` : ''}</div>
+            <form class="card-body stack" id="externalCheckForm" data-id="${x.id}" style="gap:10px"><label class="field"><span>ความเห็นผู้ตรวจ</span><textarea name="checkNote" rows="2">${esc(x.checkNote)}</textarea></label>
+            <div><button class="btn primary" type="submit">${ic('check')}บันทึกผลการตรวจ (${e.status === 'pass' ? 'ผ่าน' : e.status === 'pending' ? 'รอยืนยัน' : 'ไม่ผ่าน'})</button></div></form></div>` : ''}
+        </div>
+        <div class="stack">
+          <div class="card"><div class="card-head"><h3>${ic('search')} ค้นหาชื่อในฐานข้อมูล</h3></div><div class="card-body">
+            <p class="muted small" style="margin-top:0">ค้นชื่อผู้แต่ง → ตรวจว่าวารสารอยู่ในฐานตามประกาศ ก.พ.อ. 2562 → บันทึกผลงาน${x.nameEn ? '' : '<br><b style="color:var(--warning)">ควรเพิ่มชื่อภาษาอังกฤษเพื่อค้น Scopus/WoS</b>'}</p>
+            <div class="stack" style="gap:8px">${links.map((l) => `<a class="db-link" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="db-badge tone-primary">${esc(l.k)}</span><span style="min-width:0"><span class="t">${esc(l.label)}</span><span class="h" style="display:block">${esc(l.hint)}</span></span><span style="margin-left:auto" class="muted">${ic('external')}</span></a>`).join('')}</div></div></div>
+          <div class="card card-pad"><dl class="kv"><dt>วุฒิการศึกษา</dt><dd>${esc(DEGREE_LEVELS[x.degreeLevel] || '—')}${x.degreeName ? '<br>' + esc(x.degreeName) : ''}</dd><dt>ตำแหน่ง</dt><dd>${esc(x.position || '—')}</dd>
+            <dt>ประสบการณ์วิจัย</dt><dd>${x.researchExp ? 'มี' : '—'}</dd><dt>Scopus ID</dt><dd>${esc(x.scopusId || '—')}</dd><dt>ORCID</dt><dd>${esc(x.orcid || '—')}</dd></dl></div>
+        </div>
+      </div>`;
+  }
+
+  function renderExternalReport(id) {
+    const x = byId(scopeExternals(), id);
+    if (!x) return emptyState('user', 'ไม่พบข้อมูล', '', '<a class="btn" href="#/externals">กลับ</a>');
+    const e = evalExternal(x);
+    const pubs = (x.pubs || []).slice().sort((a, b) => (toBE(b.year) || 0) - (toBE(a.year) || 0));
+    return `${reportBar('#/external/' + x.id)}<div class="card card-pad">
+      ${reportHeader('แบบตรวจสอบคุณสมบัติผู้ทรงคุณวุฒิภายนอก', lecturerName(x, true), true)}
+      <dl class="kv"><dt>ชื่อ - สกุล</dt><dd>${esc(lecturerName(x, true))}${x.nameEn ? ' (' + esc(x.nameEn) + ')' : ''}</dd><dt>หน่วยงาน</dt><dd>${esc(x.affiliation || '—')}</dd>
+        <dt>บทบาทที่เชิญ</dt><dd>${esc(x.role || '—')}${x.programId ? ' · ' + esc(programName(x.programId)) : ''} · ระดับ${esc(EXAM_LEVELS[x.examLevel] || '')}</dd>
+        <dt>วุฒิการศึกษา</dt><dd>${esc(DEGREE_LEVELS[x.degreeLevel] || '—')} ${esc(x.degreeName || '')}</dd>
+        <dt>ผลการตรวจ</dt><dd><b>${e.status === 'pass' ? 'ผ่านคุณสมบัติ' : e.status === 'pending' ? 'รอยืนยันผลงาน' : 'ไม่ผ่านคุณสมบัติ'}</b> ตาม${esc(e.std.label)} — ${esc(e.progress)}</dd>
+        ${x.checkNote ? `<dt>ความเห็นผู้ตรวจ</dt><dd>${esc(x.checkNote)}</dd>` : ''}</dl>
+      <h3 class="mt" style="font-size:16px">ผลการตรวจเทียบเกณฑ์</h3>${externalMatrix(x)}
+      <h3 class="mt" style="font-size:16px">รายการผลงานที่ตรวจพบในฐานข้อมูล</h3>
+      ${pubs.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>ผลงาน</th><th>ปี</th><th>ฐานข้อมูล</th><th>ระดับ</th><th>ยืนยัน</th></tr></thead><tbody>${pubs.map((p, i) => { const c = catOf(p.category); return `<tr><td>${i + 1}</td><td>${esc(p.title)}<div class="cell-sub">${esc(p.journal || '')}</div></td><td>${esc(p.year || '')}</td><td>${esc(c.short)} ${esc(p.quartile || '')}</td><td>${c.kpa === 'intl' ? 'นานาชาติ' : c.kpa === 'nat' ? 'ชาติ' : 'ไม่นับ'}</td><td>${p.verified ? '✓' : '—'}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">ไม่มีผลงาน</p>'}
+      ${signBlock(x.checkedBy || 'ผู้ตรวจสอบ', 'ประธานหลักสูตร / คณบดีบัณฑิตวิทยาลัย')}</div>`;
+  }
+
+  function guideExternal() {
+    const keys = Object.keys(C.EXTERNAL_STANDARDS);
+    const table = (level) => `<div class="card mb"><div class="card-head"><h2>${ic('users')} คุณสมบัติผู้ทรงคุณวุฒิภายนอก — ${EXAM_LEVELS[level]}</h2></div><div class="table-wrap"><table class="table">
+      <thead><tr><th>คุณสมบัติ</th>${keys.map((k) => `<th>${esc(C.EXTERNAL_STANDARDS[k].label)}</th>`).join('')}</tr></thead><tbody>
+      <tr><td class="cell-title">คุณวุฒิ</td>${keys.map((k) => `<td>${esc(C.EXTERNAL_STANDARDS[k].degree)}</td>`).join('')}</tr>
+      <tr><td class="cell-title">ผลงานทางวิชาการ</td>${keys.map((k) => `<td>${esc(C.EXTERNAL_STANDARDS[k][level].text)}</td>`).join('')}</tr></tbody></table></div></div>`;
+    return `${table('phd')}${table('master')}
+      <div class="card card-pad small muted">การนับในระบบ: <b>ระดับนานาชาติ</b> = Scopus, WoS (SCIE/SSCI/AHCI), PubMed, ERIC, MathSciNet, JSTOR, Project MUSE · <b>ระดับชาติ</b> = TCI กลุ่ม 1–2 · <b>ฐานข้อมูลที่ยอมรับ</b> = ระดับชาติ + นานาชาติ ตามประกาศ ก.พ.อ. พ.ศ. 2562 (<a href="${esc(C.KPA_2562.source)}" target="_blank" rel="noopener">ดูประกาศ</a>) · นับเฉพาะผลงานที่ผู้ตรวจ "ยืนยันแล้ว"</div>`;
+  }
+
+  // ================= Pages: Guide =================
+  function renderGuide() {
+    const tab = view.tabs.guide || 'manual';
+    const T = (k, label) => `<button class="${tab === k ? 'active' : ''}" data-action="tab" data-tab="guide" data-value="${k}">${label}</button>`;
+    let body = '';
+    if (tab === 'manual') body = guideManual();
+    if (tab === 'weights') body = guideWeights();
+    if (tab === 'kpa') body = guideKpa();
+    if (tab === 'roles') body = guideRoles();
+    if (tab === 'external') body = guideExternal();
+    if (tab === 'faq') body = `<div class="faq">${C.FAQ.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div>`;
+    return `<div class="page-head"><div><h1>คู่มือ & เกณฑ์</h1><p>ขั้นตอนการใช้งาน เกณฑ์ ก.พ.อ. 2562 ค่าน้ำหนักคะแนน และคำถามที่พบบ่อย</p></div></div>
+      <div class="tabs">${T('manual', 'ขั้นตอนการใช้งาน')}${T('weights', 'ตารางค่าน้ำหนักคะแนน')}${T('kpa', 'เกณฑ์วารสาร ก.พ.อ. 2562')}${T('external', 'เกณฑ์ผู้ทรงคุณวุฒิภายนอก')}${T('roles', 'สิทธิ์ผู้ใช้งาน')}${T('faq', 'คำถามที่พบบ่อย (FAQ)')}</div>${body}`;
+  }
+
+  function guideManual() {
+    const steps = [
+      ['grid', 'แดชบอร์ดและการแจ้งเตือนอัจฉริยะ', ['การ์ดสรุป: จำนวนหลักสูตร อาจารย์ ผลงานที่นับได้ใน 5 ปี และผลงานรอตรวจ', `แจ้งเตือนสีแดง: อาจารย์ไม่มีผลงานใน ${st().windowYears} ปี / ผลงานยังไม่ถึงเกณฑ์`, `แจ้งเตือนสีส้ม: ผลงานใกล้หมดอายุ (ปี ${windowStart()}) จะไม่ถูกนับในปีประเมินถัดไป`, 'กราฟวงกลมแสดงสัดส่วนฐานข้อมูล และกราฟแท่งแสดงค่าน้ำหนักเฉลี่ยรายหลักสูตร']],
+      ['doc', 'เพิ่ม แก้ไข ลบ ผลงานวิชาการ', ['ไปที่เมนู ผลงานวิชาการ > เพิ่มผลงาน', 'เลือกอาจารย์ ประเภทผลงาน และแหล่งเผยแพร่ (ระบบแสดงค่าน้ำหนักและระดับตามประกาศ ก.พ.อ. ทันที)', 'กรอกปีที่ตีพิมพ์ (พ.ศ./ค.ศ.) — หากเกิน 5 ปี ระบบจะแจ้งเตือนว่าไม่นำมาคิดคะแนน', 'ใส่ลิงก์หลักฐาน/DOI เพื่อให้ผู้ตรวจตรวจสอบได้รวดเร็ว', 'ผลงานใหม่มีสถานะ "รอตรวจสอบ" · อาจารย์แก้ไข/ลบได้จนกว่าจะได้รับการรับรอง']],
+      ['shield', 'การตรวจรับรองผลงาน (Verification Workflow)', ['ประธานหลักสูตร/Admin เปิดเมนู ตรวจรับรองผลงาน', 'กดปุ่ม ตรวจ → ใช้ลิงก์ค้นชื่อผู้แต่งใน Scopus, ThaiJO/TCI, WoS, PubMed, ERIC และตรวจ Quartile ที่ SJR', 'ยืนยัน/แก้ไขประเภทฐานข้อมูลและ Quartile ให้ถูกต้อง', 'กด รับรองผลงาน (นับคะแนนทันที) หรือ ส่งกลับแก้ไข พร้อมเหตุผล — อาจารย์จะเห็นเหตุผลและแก้ไขแล้วส่งตรวจใหม่']],
+      ['users', 'การจัดการข้อมูลอาจารย์และหลักสูตร', ['Admin เพิ่มหลักสูตรและระบุระดับ (ตรี/โท/เอก) — ใช้กำหนดเกณฑ์และค่าเป้าหมาย', 'เพิ่มอาจารย์ ระบุประเภท (ผู้รับผิดชอบหลักสูตร/ประจำหลักสูตร/ประจำ/พิเศษ) และชื่อภาษาอังกฤษเพื่อใช้ค้นฐานข้อมูลสากล', 'หน้าโปรไฟล์อาจารย์แสดงผลการตรวจคุณสมบัติ ผลงานรายปี และลิงก์ค้นหาในฐานข้อมูล', 'สร้างบัญชีผู้ใช้ให้ประธานหลักสูตร (ผูกหลักสูตร) และอาจารย์ (ผูกรายชื่ออาจารย์) ที่ จัดการระบบ > ผู้ใช้งาน']],
+      ['chart', 'การประเมินคุณภาพหลักสูตรและออกรายงาน PDF', ['เมนู ประเมินคุณภาพหลักสูตร แสดงร้อยละผลรวมถ่วงน้ำหนักและคะแนนเต็ม 5 ของทุกหลักสูตร', 'สลับดูผลงานเฉพาะปีประเมิน (ตามคู่มือ QA) หรือสะสม 5 ปี', 'เมนู รายงาน > เลือกรายงานหลักสูตร/รายบุคคล/ภาพรวม > พิมพ์ / บันทึก PDF', 'ในหน้าต่างพิมพ์ เลือกปลายทาง "บันทึกเป็น PDF" (Save as PDF)']],
+    ];
+    return `<div class="stack manual">${steps.map(([icon, title, items], i) => `<div class="card card-pad"><h3 style="margin-top:0;display:flex;gap:10px;align-items:center"><span class="stat-ico tone-primary" style="width:34px;height:34px">${ic(icon)}</span>${i + 1}. ${esc(title)}</h3><ol>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></div>`).join('')}</div>`;
+  }
+
+  function guideWeights() {
+    const W = st().weights;
+    const rows = [];
+    C.CATEGORIES.forEach((c) => {
+      if (c.quartile) C.QUARTILES.forEach((q) => rows.push([`${c.label} — ${q}`, W[c.id + ':' + q], c.kpa]));
+      else rows.push([c.label, W[c.id], c.kpa]);
+    });
+    rows.sort((a, b) => b[1] - a[1]);
+    const tone = (w) => (w >= 1 ? 'success' : w >= 0.6 ? 'info' : w > 0 ? 'warning' : 'danger');
+    return `<div class="card"><div class="card-head"><h2>${ic('scale')} ตารางค่าน้ำหนักผลงานวิชาการ</h2><span class="muted small">ค่าปัจจุบันของระบบ${isAdmin() ? ' · <a href="#/admin" data-action="tab" data-tab="admin" data-value="settings">ปรับค่า</a>' : ''}</span></div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>ประเภทผลงาน / แหล่งเผยแพร่</th><th>ระดับตามประกาศ ก.พ.อ. 2562</th><th class="num">ค่าน้ำหนัก</th></tr></thead><tbody>
+      ${rows.map(([label, w, kpa]) => `<tr><td>${esc(label)}</td><td>${kpa === 'intl' ? chip('นานาชาติ', 'success') : kpa === 'nat' ? chip('ชาติ', 'info') : '<span class="muted">—</span>'}</td><td class="num"><span class="weight-pill tone-${tone(Number(w))}">${fmt(w)}</span></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="card-body small muted">ค่าเริ่มต้นอ้างอิงคู่มือการประกันคุณภาพการศึกษาภายใน ระดับหลักสูตร (สป.อว./สกอ.) ซึ่งให้ค่าน้ำหนักวารสารในฐาน Scopus/WoS ทุก Quartile เท่ากับ 1.00 — สถาบันสามารถกำหนดค่าน้ำหนักแยกตาม Q1–Q4 เพื่อการบริหารภายในได้ที่ จัดการระบบ > ตั้งค่าเกณฑ์</div></div>`;
+  }
+
+  function guideKpa() {
+    const K = C.KPA_2562;
+    return `<div class="grid two">
+      <div class="card"><div class="card-head"><h2>${ic('book')} วารสารทางวิชาการระดับชาติ</h2></div><div class="card-body"><ul class="clean">${K.national.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div></div>
+      <div class="card"><div class="card-head"><h2>${ic('book')} วารสารทางวิชาการระดับนานาชาติ</h2></div><div class="card-body"><p style="margin-top:0">อยู่ในฐานข้อมูลที่ ก.พ.อ. กำหนด:</p><div class="tag-list">${K.international.map((x) => chip(x, 'success')).join('')}</div></div></div>
+    </div>
+    <div class="card mt"><div class="card-head"><h2>${ic('alert')} ข้อควรระวังในการตรวจสอบ</h2></div><div class="card-body"><ul class="clean">${K.notes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      <p class="small muted">ที่มา: ${esc(K.title)} — <a href="${esc(K.source)}" target="_blank" rel="noopener">ราชกิจจานุเบกษา ${ic('external')}</a> (สรุปสาระสำคัญเพื่อการใช้งานในระบบ โปรดยึดประกาศฉบับเต็มเป็นหลัก)</p></div></div>`;
+  }
+
+  function guideRoles() {
+    const roles = ['admin', 'chair', 'lecturer', 'executive'];
+    return `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>สิทธิ์การใช้งาน</th>${roles.map((r) => `<th>${chip(C.USER_ROLES[r].label, C.USER_ROLES[r].tone)}</th>`).join('')}</tr></thead><tbody>
+      ${C.PERMISSIONS.map((row) => `<tr><td class="cell-title">${esc(row[0])}</td>${row.slice(1).map((v) => `<td>${v === '✓' ? `<span style="color:var(--success)">${ic('check')}</span>` : v === '—' ? '<span class="muted">—</span>' : esc(v)}</td>`).join('')}</tr>`).join('')}
+      </tbody></table></div></div>`;
+  }

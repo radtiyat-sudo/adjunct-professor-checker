@@ -1,0 +1,136 @@
+  // ================= Pages: Verify =================
+  function renderVerify() {
+    const tab = view.tabs.verify || 'pending';
+    const works = scopeWorks().filter((w) => canVerify(w));
+    const pending = works.filter((w) => w.status === 'pending').sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    const history = works.filter((w) => w.status !== 'pending' && w.reviewedAt).sort((a, b) => String(b.reviewedAt).localeCompare(String(a.reviewedAt))).slice(0, 50);
+    const list = tab === 'pending' ? pending : history;
+    const items = list.map((w) => {
+      const l = byId(S.data.lecturers, w.lecturerId);
+      const c = catOf(w.category);
+      const s = C.STATUSES[w.status];
+      return `<div class="result-item">
+        <span class="db-badge" style="background:${c.color}22;color:${c.color}">${esc(c.short.slice(0, 6))}</span>
+        <div class="grow"><div class="cell-title">${esc(w.title)}</div>
+          <div class="meta">${esc(lecturerName(l))} · ${esc(programName(l && l.programId))} · ปี ${toBE(w.year)} · ${esc(w.journal || c.label)}${w.quartile ? ' · ' + esc(w.quartile) : ''}</div>
+          <div class="meta">${tab === 'pending' ? `ส่งเมื่อ ${fmtDate(w.createdAt)} โดย ${esc(w.createdBy || '—')}` : `${chip(s.label, s.tone, true)} ${esc(w.reviewedBy || '')} · ${fmtDate(w.reviewedAt)}${w.reviewNote ? ' · ' + esc(w.reviewNote) : ''}`}
+            ${isExpired(w) ? chip('เกิน ' + st().windowYears + ' ปี', 'neutral') : ''}</div></div>
+        <button class="btn sm ${tab === 'pending' ? 'primary' : ''}" data-action="verify-work" data-id="${w.id}">${ic('shield')}${tab === 'pending' ? 'ตรวจ' : 'ทบทวน'}</button></div>`;
+    }).join('');
+    return `
+      <div class="page-head"><div><h1>ตรวจรับรองผลงาน</h1><p>ขั้นตอน: อาจารย์บันทึก → ผู้ตรวจค้นในฐานข้อมูล → รับรอง/ส่งกลับแก้ไข → นับคะแนน</p></div></div>
+      <div class="tabs" role="tablist"><button class="${tab === 'pending' ? 'active' : ''}" data-action="tab" data-tab="verify" data-value="pending">รอตรวจสอบ (${pending.length})</button><button class="${tab === 'history' ? 'active' : ''}" data-action="tab" data-tab="verify" data-value="history">ประวัติการตรวจ</button></div>
+      <div class="card card-pad">${list.length ? `<div class="stack" style="gap:8px">${items}</div>` : emptyState('checkc', tab === 'pending' ? 'ไม่มีผลงานรอตรวจ' : 'ยังไม่มีประวัติการตรวจ', tab === 'pending' ? 'ผลงานทั้งหมดได้รับการตรวจแล้ว' : '')}</div>`;
+  }
+
+  // ================= Pages: Assessment =================
+  function renderAssessment() {
+    const mode = view.tabs.assessMode || 'year';
+    const progs = scopePrograms();
+    const rows = progs.map((p) => {
+      const e = evalProgram(p, mode);
+      const b = scoreBand(e.score);
+      return `<tr>
+        <td><div class="cell-title">${esc(p.name)}</div><div class="cell-sub">${esc((C.LEVELS[p.level] || C.LEVELS.bachelor).label)} · เป้าหมายร้อยละ ${e.target}</div></td>
+        <td class="num">${e.n}</td><td class="num">${e.works.length}</td><td class="num">${fmt(e.sum)}</td><td class="num">${fmt(e.pct)}</td>
+        <td class="num"><b style="font-size:17px">${fmt(e.score)}</b></td><td>${chip(b.label, b.tone)}</td>
+        <td class="num">${e.passCount}/${e.lecs.length}</td>
+        <td class="actions"><a class="btn sm" href="#/report/program/${p.id}">${ic('printer')}รายงาน</a></td></tr>`;
+    }).join('');
+    return `
+      <div class="page-head"><div><h1>ประเมินคุณภาพหลักสูตร</h1><p>ตัวบ่งชี้ผลงานวิชาการของอาจารย์ผู้รับผิดชอบหลักสูตร · ปีประเมิน ${st().refYear}</p></div>
+        <div class="btn-row"><a class="btn" href="#/report/college">${ic('printer')}รายงานภาพรวมบัณฑิตวิทยาลัย</a></div></div>
+      <div class="tabs"><button class="${mode === 'year' ? 'active' : ''}" data-action="tab" data-tab="assessMode" data-value="year">ผลงานปี ${st().refYear} (ตามคู่มือ QA)</button><button class="${mode === 'window' ? 'active' : ''}" data-action="tab" data-tab="assessMode" data-value="window">ผลงานสะสม ${st().windowYears} ปี (${windowStart()}–${st().refYear})</button></div>
+      <div class="card mb">${progs.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>หลักสูตร</th><th class="num">อ.ผู้รับผิดชอบ</th><th class="num">จำนวนผลงาน</th><th class="num">ผลรวมถ่วงน้ำหนัก</th><th class="num">ร้อยละ</th><th class="num">คะแนน (5)</th><th>ระดับ</th><th class="num">อ.ผ่านเกณฑ์</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : emptyState('chart', 'ยังไม่มีหลักสูตร', '')}</div>
+      <div class="card card-pad"><h3 style="font-size:15px;margin-bottom:8px">${ic('info')} วิธีคำนวณ</h3>
+        <ol class="small muted" style="margin:0;padding-left:20px">
+          <li>ร้อยละผลรวมถ่วงน้ำหนัก = (ผลรวมค่าน้ำหนักผลงานที่รับรองแล้วของอาจารย์ผู้รับผิดชอบหลักสูตร ÷ จำนวนอาจารย์ผู้รับผิดชอบหลักสูตร) × 100</li>
+          <li>แปลงเป็นคะแนน: คะแนน = (ร้อยละ ÷ ร้อยละเป้าหมาย) × 5 (สูงสุด 5) — เป้าหมาย ป.ตรี ${st().targets.bachelor} · ป.โท ${st().targets.master} · ป.เอก ${st().targets.phd}</li>
+          <li>ค่าน้ำหนักแต่ละประเภทดูได้ที่ <a href="#/guide">คู่มือ & เกณฑ์</a> (ปรับได้โดยผู้ดูแลระบบ)</li></ol></div>`;
+  }
+
+  // ================= Pages: Reports =================
+  function renderReports() {
+    const progs = scopePrograms();
+    const lecs = scopeLecturers();
+    return `
+      <div class="page-head"><div><h1>รายงาน</h1><p>เลือกรายงาน แล้วกด "พิมพ์ / บันทึก PDF" (เลือกปลายทางเป็น Save as PDF)</p></div></div>
+      <div class="grid two">
+        ${role() !== 'lecturer' ? `<div class="card"><div class="card-head"><h2>${ic('layers')} รายงานผลการประเมินรายหลักสูตร</h2></div><div class="card-body"><div class="stack" style="gap:8px">
+          ${progs.map((p) => `<a class="db-link" href="#/report/program/${p.id}"><span class="db-badge tone-primary">${ic('layers')}</span><span><span class="t">${esc(p.name)}</span><span class="h" style="display:block">${esc((C.LEVELS[p.level] || C.LEVELS.bachelor).label)}</span></span></a>`).join('') || '<span class="muted">ยังไม่มีหลักสูตร</span>'}</div></div></div>` : ''}
+        <div class="card"><div class="card-head"><h2>${ic('user')} รายงานผลงานรายบุคคล</h2></div><div class="card-body">
+          <label class="field"><span>เลือกอาจารย์</span><select class="input" id="reportLecturer">${lecs.map((l) => opt(l.id, lecturerName(l) + ' · ' + programName(l.programId))).join('')}</select></label>
+          <button class="btn primary mt" data-action="open-lecturer-report" ${lecs.length ? '' : 'disabled'}>${ic('printer')}เปิดรายงาน</button></div></div>
+        ${role() === 'admin' || role() === 'executive' ? `<div class="card"><div class="card-head"><h2>${ic('chart')} รายงานภาพรวมบัณฑิตวิทยาลัย</h2></div><div class="card-body"><p class="muted" style="margin-top:0">สรุปคะแนนทุกหลักสูตร สถานะอาจารย์ และสัดส่วนผลงาน</p><a class="btn primary" href="#/report/college">${ic('printer')}เปิดรายงาน</a></div></div>` : ''}
+        <div class="card"><div class="card-head"><h2>${ic('download')} ส่งออกข้อมูล</h2></div><div class="card-body"><p class="muted" style="margin-top:0">ไฟล์ CSV เปิดด้วย Excel / Google Sheets ได้ (รองรับภาษาไทย)</p><button class="btn" data-action="export-csv">${ic('download')}ผลงานทั้งหมด (CSV)</button></div></div>
+      </div>`;
+  }
+
+  function reportHeader(title, sub, noWindow) {
+    const s = st();
+    const period = noWindow ? 'นับผลงานทั้งหมด' : `ปีประเมิน ${s.refYear} · รอบผลงาน ${windowStart()}–${s.refYear}`;
+    return `<div class="report-head"><div class="muted small">${esc(s.university)}</div><h2>${esc(s.collegeName)}</h2><h2 style="margin-top:4px">${esc(title)}</h2>
+      <div class="muted small">${esc(sub || '')} · ${period} · พิมพ์เมื่อ ${fmtDate(new Date().toISOString())}</div></div>`;
+  }
+  const reportBar = (back) => `<div class="page-head no-print"><a href="${back}" class="btn ghost sm">← กลับ</a><button class="btn primary" data-action="print">${ic('printer')}พิมพ์ / บันทึก PDF</button></div>`;
+  const signBlock = (a, b) => `<div class="sign-row"><div>ลงชื่อ ................................................<br>(${esc(a)})</div><div>ลงชื่อ ................................................<br>(${esc(b)})</div></div>`;
+
+  function worksTable(works, showLecturer) {
+    if (!works.length) return '<p class="muted">ไม่มีผลงาน</p>';
+    return `<div class="table-wrap"><table class="table"><thead><tr><th>#</th>${showLecturer ? '<th>อาจารย์</th>' : ''}<th>ผลงาน</th><th>ปี</th><th>แหล่งเผยแพร่</th><th>สถานะ</th><th class="num">ค่าน้ำหนัก</th></tr></thead><tbody>
+      ${works.map((w, i) => `<tr><td>${i + 1}</td>${showLecturer ? `<td>${esc(lecturerName(byId(S.data.lecturers, w.lecturerId)))}</td>` : ''}<td>${esc(w.title)}<div class="cell-sub">${esc(w.journal || '')} ${esc(w.detail || '')}</div></td><td>${toBE(w.year)}</td><td>${esc(catOf(w.category).short)}${w.quartile ? ' ' + esc(w.quartile) : ''}</td><td>${esc((C.STATUSES[w.status] || {}).label || '')}</td><td class="num">${isCountable(w) ? fmt(weightOf(w)) : '0.00'}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+
+  function renderReport(kind, id) {
+    if (kind === 'program') {
+      const p = byId(scopePrograms(), id);
+      if (!p) return emptyState('layers', 'ไม่พบหลักสูตร', '', '<a class="btn" href="#/reports">กลับ</a>');
+      const ey = evalProgram(p, 'year');
+      const ew = evalProgram(p, 'window');
+      const lecRows = ey.evals.map(({ l, e }, i) => `<tr><td>${i + 1}</td><td>${esc(lecturerName(l, true))}</td><td>${esc(lecTypeOf(l.type).label)}</td><td class="num">${e.counted.length}/${e.req.minWorks}</td><td class="num">${fmt(e.weight)}</td><td>${STATUS_META[e.status].label}</td></tr>`).join('');
+      const responsibleIds = new Set(ew.responsible.map((l) => l.id));
+      const works = S.data.works.filter((w) => responsibleIds.has(w.lecturerId) && inWindow(w)).sort((a, b) => toBE(b.year) - toBE(a.year));
+      return `${reportBar('#/assessment')}<div class="card card-pad">
+        ${reportHeader('รายงานผลงานวิชาการของอาจารย์ประจำหลักสูตร', p.name)}
+        <div class="grid stats" style="grid-template-columns:repeat(4,1fr)">
+          <div class="stat card"><span class="muted small">อ.ผู้รับผิดชอบหลักสูตร</span><span class="stat-num">${ey.n}</span></div>
+          <div class="stat card"><span class="muted small">ผลรวมถ่วงน้ำหนัก (ปี ${st().refYear})</span><span class="stat-num">${fmt(ey.sum)}</span></div>
+          <div class="stat card"><span class="muted small">ร้อยละ (เป้าหมาย ${ey.target})</span><span class="stat-num">${fmt(ey.pct)}</span></div>
+          <div class="stat card"><span class="muted small">คะแนนตัวบ่งชี้ (เต็ม 5)</span><span class="stat-num" style="color:var(--primary)">${fmt(ey.score)}</span></div></div>
+        <p class="small muted">ผลงานสะสม ${st().windowYears} ปี: ผลรวมถ่วงน้ำหนัก ${fmt(ew.sum)} · ร้อยละ ${fmt(ew.pct)} · คะแนน ${fmt(ew.score)}</p>
+        <h3 class="mt" style="font-size:16px">1. คุณสมบัติด้านผลงานของอาจารย์ในหลักสูตร</h3>
+        <div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>ชื่อ - สกุล</th><th>ประเภท</th><th class="num">ผลงาน/เกณฑ์</th><th class="num">ค่าน้ำหนัก</th><th>ผล</th></tr></thead><tbody>${lecRows}</tbody></table></div>
+        <h3 class="mt" style="font-size:16px">2. รายการผลงานของอาจารย์ผู้รับผิดชอบหลักสูตร (${windowStart()}–${st().refYear})</h3>
+        ${worksTable(works, true)}
+        ${signBlock(p.chair || chairNameOf(p.id) || 'ประธานหลักสูตร', 'คณบดีบัณฑิตวิทยาลัย')}</div>`;
+    }
+    if (kind === 'lecturer') {
+      const l = byId(scopeLecturers(), id);
+      if (!l) return emptyState('user', 'ไม่พบข้อมูลอาจารย์', '', '<a class="btn" href="#/reports">กลับ</a>');
+      const e = evalLecturer(l);
+      const works = e.all.slice().sort((a, b) => toBE(b.year) - toBE(a.year));
+      return `${reportBar('#/lecturer/' + l.id)}<div class="card card-pad">
+        ${reportHeader('แบบรายงานผลงานวิชาการรายบุคคล', lecturerName(l, true))}
+        <dl class="kv"><dt>ชื่อ - สกุล</dt><dd>${esc(lecturerName(l, true))} ${l.nameEn ? '(' + esc(l.nameEn) + ')' : ''}</dd><dt>หลักสูตร</dt><dd>${esc(programName(l.programId))}</dd>
+          <dt>ประเภท</dt><dd>${esc(lecTypeOf(l.type).label)}</dd><dt>เกณฑ์</dt><dd>ผลงาน ≥ ${e.req.minWorks} เรื่องใน ${st().windowYears} ปี${e.req.minResearch ? ` (วิจัย ≥ ${e.req.minResearch})` : ''}</dd>
+          <dt>ผลการตรวจสอบ</dt><dd><b>${STATUS_META[e.status].label}</b> — นับได้ ${e.counted.length} เรื่อง · ค่าน้ำหนักรวม ${fmt(e.weight)}</dd></dl>
+        <h3 class="mt" style="font-size:16px">รายการผลงาน</h3>${worksTable(works)}
+        ${signBlock(lecturerName(l, true), 'ผู้ตรวจสอบ')}</div>`;
+    }
+    if (kind === 'external') return renderExternalReport(id);
+    if (kind === 'college') {
+      const progs = scopePrograms();
+      const rows = progs.map((p, i) => { const e = evalProgram(p, 'year'); const w = evalProgram(p, 'window'); return `<tr><td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc((C.LEVELS[p.level] || C.LEVELS.bachelor).label)}</td><td class="num">${e.n}</td><td class="num">${fmt(e.sum)}</td><td class="num">${fmt(e.pct)}</td><td class="num"><b>${fmt(e.score)}</b></td><td class="num">${fmt(w.score)}</td><td class="num">${e.passCount}/${e.lecs.length}</td></tr>`; }).join('');
+      const avg = progs.length ? progs.reduce((s, p) => s + evalProgram(p, 'year').score, 0) / progs.length : 0;
+      const ws = S.data.works.filter((w) => inWindow(w) && w.status === 'verified');
+      const byCat = C.CATEGORIES.map((c) => ({ label: c.short, color: c.color, value: ws.filter((w) => w.category === c.id).length }));
+      return `${reportBar('#/reports')}<div class="card card-pad">
+        ${reportHeader('รายงานสรุปผลงานวิชาการระดับบัณฑิตวิทยาลัย', 'ทุกหลักสูตร')}
+        <div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>หลักสูตร</th><th>ระดับ</th><th class="num">อ.ผู้รับผิดชอบ</th><th class="num">ผลรวมถ่วงน้ำหนัก</th><th class="num">ร้อยละ</th><th class="num">คะแนนปี ${st().refYear}</th><th class="num">คะแนนสะสม ${st().windowYears} ปี</th><th class="num">อ.ผ่านเกณฑ์</th></tr></thead><tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="6" class="num"><b>คะแนนเฉลี่ยระดับบัณฑิตวิทยาลัย</b></td><td class="num"><b>${fmt(avg)}</b></td><td colspan="2"></td></tr></tfoot></table></div>
+        <h3 class="mt" style="font-size:16px">สัดส่วนผลงานที่รับรองแล้ว (${windowStart()}–${st().refYear})</h3><div class="mt">${donut(byCat, 'ผลงาน')}</div>
+        ${signBlock('ผู้รับผิดชอบงานประกันคุณภาพ', 'คณบดีบัณฑิตวิทยาลัย')}</div>`;
+    }
+    return emptyState('printer', 'ไม่พบรายงาน', '', '<a class="btn" href="#/reports">กลับ</a>');
+  }

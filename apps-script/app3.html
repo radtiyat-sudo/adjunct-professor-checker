@@ -1,0 +1,333 @@
+  // ================= Pages: Works =================
+  function workFilters() {
+    const f = view.filters.works || (view.filters.works = { q: '', status: '', cat: '', program: '', period: '' });
+    return f;
+  }
+
+  function renderWorks() {
+    const f = workFilters();
+    let list = scopeWorks().slice();
+    const q = f.q.trim().toLowerCase();
+    if (q) list = list.filter((w) => [w.title, w.journal, lecturerName(byId(S.data.lecturers, w.lecturerId)), w.issn].join(' ').toLowerCase().includes(q));
+    if (f.status) list = list.filter((w) => w.status === f.status);
+    if (f.cat) list = list.filter((w) => w.category === f.cat);
+    if (f.program) list = list.filter((w) => { const l = byId(S.data.lecturers, w.lecturerId); return l && l.programId === f.program; });
+    if (f.period === 'in') list = list.filter(inWindow);
+    if (f.period === 'expiring') list = list.filter((w) => inWindow(w) && isExpiring(w));
+    if (f.period === 'expired') list = list.filter(isExpired);
+    list.sort((a, b) => toBE(b.year) - toBE(a.year) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
+
+    const rows = list.map((w) => {
+      const l = byId(S.data.lecturers, w.lecturerId);
+      const c = catOf(w.category);
+      const s = C.STATUSES[w.status] || C.STATUSES.pending;
+      const yearChip = isExpired(w) ? chip('เกิน ' + st().windowYears + ' ปี', 'neutral') : isExpiring(w) ? chip('ใกล้หมดอายุ', 'warning') : '';
+      return `<tr>
+        <td><div class="cell-title">${esc(w.title)}</div><div class="cell-sub">${esc(w.journal || typeOf(w.type).label)}${w.quartile ? ' · ' + esc(w.quartile) : ''}</div>
+          ${w.status === 'rejected' && w.reviewNote ? `<div class="cell-sub" style="color:var(--danger)">เหตุผล: ${esc(w.reviewNote)}</div>` : ''}</td>
+        <td><a href="#/lecturer/${l ? l.id : ''}">${esc(lecturerName(l))}</a><div class="cell-sub">${esc(l ? programName(l.programId) : '')}</div></td>
+        <td class="nowrap">${esc(toBE(w.year))} ${yearChip}</td>
+        <td><span class="chip" style="background:${c.color}22;color:${c.color}">${esc(c.short)}</span></td>
+        <td class="num">${isCountable(w) ? fmt(weightOf(w)) : `<span class="muted">${fmt(0)}</span>`}</td>
+        <td>${chip(s.label, s.tone, true)}</td>
+        <td class="actions">
+          ${canVerify(w) && w.status === 'pending' ? `<button class="btn sm" data-action="verify-work" data-id="${w.id}" title="ตรวจรับรอง">${ic('shield')}</button>` : ''}
+          ${canEditWork(w) ? `<button class="btn sm" data-action="edit-work" data-id="${w.id}" title="แก้ไข">${ic('edit')}</button><button class="btn sm danger" data-action="delete-work" data-id="${w.id}" title="ลบ">${ic('trash')}</button>` : `<button class="btn sm" data-action="view-work" data-id="${w.id}" title="ดูรายละเอียด">${ic('info')}</button>`}
+        </td></tr>`;
+    }).join('');
+
+    return `
+      <div class="page-head"><div><h1>ผลงานวิชาการ</h1><p>บันทึก แก้ไข และติดตามสถานะผลงาน · ช่วงนับผลงาน ${windowStart()}–${st().refYear}</p></div>
+        <div class="btn-row"><button class="btn" data-action="export-csv">${ic('download')}ส่งออก CSV</button>${canAddWork() ? `<button class="btn primary" data-action="add-work">${ic('plus')}เพิ่มผลงาน</button>` : ''}</div></div>
+      <div class="card">
+        <div class="toolbar">
+          <input class="input grow" type="search" placeholder="ค้นหาชื่อผลงาน วารสาร หรือชื่ออาจารย์…" value="${esc(f.q)}" data-filter="works.q">
+          <select class="input" data-filter="works.status"><option value="">ทุกสถานะ</option>${Object.entries(C.STATUSES).map(([k, v]) => opt(k, v.label, f.status)).join('')}</select>
+          <select class="input" data-filter="works.cat"><option value="">ทุกฐานข้อมูล</option>${C.CATEGORIES.map((c) => opt(c.id, c.short, f.cat)).join('')}</select>
+          ${scopePrograms().length > 1 ? `<select class="input" data-filter="works.program"><option value="">ทุกหลักสูตร</option>${scopePrograms().map((p) => opt(p.id, p.name, f.program)).join('')}</select>` : ''}
+          <select class="input" data-filter="works.period"><option value="">ทุกปี</option>${opt('in', `ใน ${st().windowYears} ปี`, f.period)}${opt('expiring', 'ใกล้หมดอายุ', f.period)}${opt('expired', `เกิน ${st().windowYears} ปี`, f.period)}</select>
+        </div>
+        ${list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>ผลงาน</th><th>อาจารย์</th><th>ปี (พ.ศ.)</th><th>ฐานข้อมูล</th><th class="num">ค่าน้ำหนัก</th><th>สถานะ</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+          <div class="toolbar" style="border-top:1px solid var(--border);border-bottom:0"><span class="muted small">แสดง ${fmtInt(list.length)} รายการ · ค่าน้ำหนักแสดงเฉพาะผลงานที่รับรองแล้วและอยู่ในช่วง ${st().windowYears} ปี</span></div>`
+          : emptyState('doc', 'ไม่พบผลงาน', 'ลองเปลี่ยนตัวกรอง หรือเพิ่มผลงานใหม่', canAddWork() ? `<button class="btn primary" data-action="add-work">${ic('plus')}เพิ่มผลงาน</button>` : '')}
+      </div>`;
+  }
+
+  function workForm(w, presetLecturer) {
+    w = w || {};
+    const lecs = scopeLecturers().filter((l) => l.active !== false || l.id === w.lecturerId);
+    const lecId = w.lecturerId || presetLecturer || (role() === 'lecturer' ? S.user.lecturerId : '');
+    const c = catOf(w.category || 'tci1');
+    return `
+      <div class="form-grid">
+        <label class="field full"><span>อาจารย์เจ้าของผลงาน <em>*</em></span>
+          <select name="lecturerId" required ${role() === 'lecturer' ? 'disabled' : ''}><option value="">— เลือกอาจารย์ —</option>${lecs.map((l) => opt(l.id, lecturerName(l) + ' · ' + programName(l.programId), lecId)).join('')}</select>
+          ${role() === 'lecturer' ? `<input type="hidden" name="lecturerId" value="${esc(lecId)}">` : ''}</label>
+        <label class="field full"><span>ชื่อผลงาน <em>*</em></span><textarea name="title" required rows="2">${esc(w.title)}</textarea></label>
+        <label class="field"><span>ประเภทผลงาน</span><select name="type">${C.WORK_TYPES.map((t) => opt(t.id, t.label, w.type || 'research')).join('')}</select></label>
+        <label class="field"><span>บทบาทผู้แต่ง</span><select name="authorRole">${C.AUTHOR_ROLES.map((a) => opt(a.id, a.label, w.authorRole || 'first')).join('')}</select></label>
+        <label class="field full"><span>แหล่งเผยแพร่ / ฐานข้อมูล <em>*</em></span>
+          <select name="category" required data-live="work">${C.CATEGORIES.map((x) => opt(x.id, `${x.label} — ${fmt(st().weights[x.id] != null ? st().weights[x.id] : x.weight)}`, c.id)).join('')}</select></label>
+        <label class="field" data-show="quartile"><span>Quartile (SJR / JCR)</span><select name="quartile" data-live="work"><option value="">ไม่ระบุ</option>${C.QUARTILES.map((q) => opt(q, q, w.quartile)).join('')}</select></label>
+        <label class="field"><span>ปีที่ตีพิมพ์ (พ.ศ. หรือ ค.ศ.) <em>*</em></span><input name="year" required inputmode="numeric" pattern="\\d{4}" value="${esc(w.year || st().refYear)}" data-live="work"></label>
+        <label class="field" data-show="journal"><span>ชื่อวารสาร / การประชุม</span><input name="journal" value="${esc(w.journal)}"></label>
+        <label class="field" data-show="journal"><span>ISSN / e-ISSN</span><input name="issn" value="${esc(w.issn)}" placeholder="เช่น 1234-5678"></label>
+        <label class="field"><span>ปีที่/ฉบับที่/หน้า</span><input name="detail" value="${esc(w.detail)}" placeholder="เช่น ปีที่ 9 ฉบับที่ 2 หน้า 1-15"></label>
+        <label class="field"><span>DOI</span><input name="doi" value="${esc(w.doi)}" placeholder="10.xxxx/xxxxx"></label>
+        <label class="field full"><span>ลิงก์หลักฐาน (หน้าบทความ / หน้าฐานข้อมูล)</span><input name="url" type="url" value="${esc(w.url)}" placeholder="https://"></label>
+        <label class="field full"><span>หมายเหตุ</span><textarea name="note" rows="2">${esc(w.note)}</textarea></label>
+      </div>
+      <div class="mt" id="workHint"></div>`;
+  }
+
+  function updateWorkHint(form) {
+    const cat = catOf(form.category.value);
+    const showQ = !!cat.quartile;
+    $$('[data-show="quartile"]', form).forEach((el) => { el.hidden = !showQ; });
+    $$('[data-show="journal"]', form).forEach((el) => { el.hidden = !(cat.journal || /^proc/.test(cat.id)); });
+    const w = { category: cat.id, quartile: showQ ? form.quartile.value : '', year: form.year.value };
+    const y = toBE(w.year);
+    const weight = weightOf(w);
+    const parts = [];
+    const kpa = cat.kpa === 'intl' ? chip('วารสารระดับนานาชาติตามประกาศ ก.พ.อ.', 'success') : cat.kpa === 'nat' ? chip('วารสารระดับชาติตามประกาศ ก.พ.อ.', 'info') : cat.journal ? chip('ไม่ใช่วารสารตามประกาศ ก.พ.อ. 2562', 'neutral') : '';
+    parts.push(`<div class="alert tone-${weight > 0 ? 'primary' : 'danger'}">${ic(weight > 0 ? 'info' : 'xc')}<div><b>ค่าน้ำหนักผลงาน ${fmt(weight)}</b>${weight > 0 ? 'ผลงานนี้นำไปคิดคะแนนได้เมื่อได้รับการรับรอง' : 'ประเภทนี้ไม่ถูกนำมาคิดคะแนน'} ${kpa}</div></div>`);
+    if (y && y < windowStart()) parts.push(`<div class="alert tone-warning">${ic('alert')}<div><b>ผลงานเกิน ${st().windowYears} ปี</b>ปี ${y} อยู่นอกช่วง ${windowStart()}–${st().refYear} จะไม่ถูกนำมาคิดคะแนนในปีประเมินนี้ (บันทึกเป็นประวัติได้)</div></div>`);
+    else if (y === windowStart()) parts.push(`<div class="alert tone-warning">${ic('clock')}<div><b>ผลงานใกล้หมดอายุ</b>จะนับได้ถึงปีประเมิน ${st().refYear} เท่านั้น</div></div>`);
+    else if (y > st().refYear) parts.push(`<div class="alert tone-info">${ic('info')}<div><b>ปีที่ตีพิมพ์มากกว่าปีประเมิน</b>จะเริ่มนับเมื่อปรับปีประเมินเป็น ${y}</div></div>`);
+    if (String(form.year.value).trim() && parseInt(form.year.value, 10) < 2400) parts.push(`<div class="muted small">แปลง ค.ศ. ${esc(form.year.value)} เป็น พ.ศ. ${y}</div>`);
+    $('#workHint', form).innerHTML = parts.join('');
+    hydrateIcons($('#workHint', form));
+  }
+
+  function openWorkForm(w, presetLecturer) {
+    const editing = !!w;
+    const form = openModal({
+      title: editing ? 'แก้ไขผลงานวิชาการ' : 'เพิ่มผลงานวิชาการ', wide: true, body: workForm(w, presetLecturer),
+      onSubmit: async (v) => {
+        const rec = Object.assign({}, w || { id: uid('w'), status: 'pending', createdAt: new Date().toISOString(), createdBy: S.user.username });
+        ['lecturerId', 'title', 'type', 'authorRole', 'category', 'journal', 'issn', 'detail', 'doi', 'url', 'note'].forEach((k) => { rec[k] = (v[k] || '').trim(); });
+        rec.quartile = catOf(rec.category).quartile ? v.quartile || '' : '';
+        rec.year = toBE(v.year);
+        if (!canEditWork(rec)) throw new Error('ไม่มีสิทธิ์บันทึกผลงานของอาจารย์ท่านนี้');
+        // อาจารย์แก้ไขผลงานที่ถูกส่งกลับ → ส่งตรวจใหม่
+        if (editing && role() === 'lecturer' && rec.status === 'rejected') rec.status = 'pending';
+        await upsert('works', rec);
+        toast(editing ? 'บันทึกการแก้ไขแล้ว' : 'เพิ่มผลงานแล้ว — สถานะ: รอตรวจสอบ');
+        render();
+      },
+    });
+    form.addEventListener('input', (e) => { if (e.target.dataset.live) updateWorkHint(form); });
+    form.addEventListener('change', (e) => { if (e.target.dataset.live) updateWorkHint(form); });
+    updateWorkHint(form);
+  }
+
+  function workDetailHtml(w) {
+    const l = byId(S.data.lecturers, w.lecturerId);
+    const c = catOf(w.category);
+    const s = C.STATUSES[w.status] || C.STATUSES.pending;
+    return `<dl class="kv">
+      <dt>ชื่อผลงาน</dt><dd>${esc(w.title)}</dd>
+      <dt>อาจารย์</dt><dd>${esc(lecturerName(l, true))}</dd>
+      <dt>ประเภท</dt><dd>${esc(typeOf(w.type).label)} · ${esc((C.AUTHOR_ROLES.find((a) => a.id === w.authorRole) || {}).label || '')}</dd>
+      <dt>แหล่งเผยแพร่</dt><dd>${esc(c.label)}${w.quartile ? ' (' + esc(w.quartile) + ')' : ''}</dd>
+      <dt>วารสาร</dt><dd>${esc(w.journal || '—')} ${w.issn ? '<span class="muted">ISSN ' + esc(w.issn) + '</span>' : ''}</dd>
+      <dt>ปีที่ตีพิมพ์</dt><dd>${esc(toBE(w.year))} ${esc(w.detail || '')}</dd>
+      <dt>ค่าน้ำหนัก</dt><dd>${fmt(weightOf(w))} ${inWindow(w) ? '' : chip('นอกช่วง ' + st().windowYears + ' ปี', 'neutral')}</dd>
+      <dt>สถานะ</dt><dd>${chip(s.label, s.tone, true)} ${w.reviewedBy ? `<span class="muted small">โดย ${esc(w.reviewedBy)} · ${fmtDate(w.reviewedAt)}</span>` : ''}</dd>
+      ${w.reviewNote ? `<dt>ความเห็นผู้ตรวจ</dt><dd>${esc(w.reviewNote)}</dd>` : ''}
+      ${w.note ? `<dt>หมายเหตุ</dt><dd>${esc(w.note)}</dd>` : ''}
+    </dl>
+    <div class="divider"></div>
+    <div class="small muted" style="margin-bottom:8px">ตรวจสอบแหล่งเผยแพร่</div>
+    <div class="btn-row">${C.workLinks(w).map((x) => `<a class="btn sm" href="${esc(x.url)}" target="_blank" rel="noopener">${ic('external')}${esc(x.label)}</a>`).join('')}</div>`;
+  }
+
+  function openVerify(w) {
+    const l = byId(S.data.lecturers, w.lecturerId);
+    const form = openModal({
+      title: 'ตรวจรับรองผลงาน', wide: true,
+      body: `${workDetailHtml(w)}
+        <div class="divider"></div>
+        <div class="small muted" style="margin-bottom:8px">ค้นหาชื่อผู้แต่งในฐานข้อมูล</div>
+        <div class="btn-row">${l ? C.searchLinks(l).slice(0, 6).map((x) => `<a class="btn sm" href="${esc(x.url)}" target="_blank" rel="noopener">${ic('search')}${esc(x.label)}</a>`).join('') : ''}</div>
+        <div class="divider"></div>
+        <div class="form-grid">
+          <label class="field"><span>ยืนยันแหล่งเผยแพร่</span><select name="category">${C.CATEGORIES.map((x) => opt(x.id, x.label, w.category)).join('')}</select></label>
+          <label class="field"><span>Quartile</span><select name="quartile"><option value="">ไม่ระบุ</option>${C.QUARTILES.map((q) => opt(q, q, w.quartile)).join('')}</select></label>
+          <label class="field full"><span>ความเห็นผู้ตรวจ <small>(จำเป็นเมื่อส่งกลับแก้ไข)</small></span><textarea name="reviewNote" rows="2">${esc(w.reviewNote)}</textarea></label>
+        </div>
+        <input type="hidden" name="decision" value="verified">`,
+      submitLabel: 'รับรองผลงาน',
+      footExtra: `<button type="button" class="btn danger" data-reject style="margin-right:auto">${ic('xc')}ส่งกลับแก้ไข</button>`,
+      onSubmit: async (v) => {
+        if (v.decision === 'rejected' && !String(v.reviewNote || '').trim()) { toast('กรุณาระบุเหตุผลที่ส่งกลับแก้ไข', 'error'); return false; }
+        const rec = Object.assign({}, w, {
+          category: v.category, quartile: catOf(v.category).quartile ? v.quartile : '',
+          status: v.decision, reviewNote: (v.reviewNote || '').trim(), reviewedBy: S.user.displayName || S.user.username, reviewedAt: new Date().toISOString(),
+        });
+        await upsert('works', rec);
+        toast(v.decision === 'verified' ? 'รับรองผลงานแล้ว' : 'ส่งกลับให้อาจารย์แก้ไขแล้ว');
+        render();
+      },
+    });
+    hydrateIcons(form);
+    $('[data-reject]', form).addEventListener('click', () => { form.decision.value = 'rejected'; form.requestSubmit(); });
+  }
+
+  // ================= Pages: Lecturers =================
+  function renderLecturers() {
+    const f = view.filters.lecturers || (view.filters.lecturers = { q: '', program: '', status: '' });
+    let list = scopeLecturers().map((l) => ({ l, e: evalLecturer(l) }));
+    const q = f.q.trim().toLowerCase();
+    if (q) list = list.filter(({ l }) => [l.prefix, l.nameTh, l.nameEn, l.email].join(' ').toLowerCase().includes(q));
+    if (f.program) list = list.filter(({ l }) => l.programId === f.program);
+    if (f.status) list = list.filter(({ l, e }) => (f.status === 'inactive' ? l.active === false : e.status === f.status && l.active !== false));
+    list.sort((a, b) => programName(a.l.programId).localeCompare(programName(b.l.programId), 'th') || lecturerName(a.l).localeCompare(lecturerName(b.l), 'th'));
+    const rows = list.map(({ l, e }) => {
+      const m = STATUS_META[e.status];
+      return `<tr class="row-link" data-href="#/lecturer/${l.id}">
+        <td><div class="person-cell"><div class="avatar sm">${esc(initials(l.nameTh))}</div><div><div class="cell-title">${esc(lecturerName(l, true))}</div><div class="cell-sub">${esc(l.nameEn || '')}</div></div></div></td>
+        <td>${esc(programName(l.programId))}<div class="cell-sub">${esc(lecTypeOf(l.type).label)}</div></td>
+        <td class="num">${e.counted.length}/${e.req.minWorks}${e.pending.length ? `<div class="cell-sub">รอ ${e.pending.length}</div>` : ''}</td>
+        <td class="num">${fmt(e.weight)}</td>
+        <td>${l.active === false ? chip('ไม่ปฏิบัติงาน', 'neutral') : chip(m.label, m.tone, true)}${e.expiring.length ? ' ' + chip('ใกล้หมดอายุ ' + e.expiring.length, 'warning') : ''}</td>
+        <td class="actions">${canEditLecturer(l) ? `<button class="btn sm" data-action="edit-lecturer" data-id="${l.id}" title="แก้ไข">${ic('edit')}</button>` : ''}${isAdmin() || (role() === 'chair' && canEditLecturer(l)) ? `<button class="btn sm danger" data-action="delete-lecturer" data-id="${l.id}" title="ลบ">${ic('trash')}</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+    return `
+      <div class="page-head"><div><h1>อาจารย์ประจำหลักสูตร</h1><p>สถานะคุณสมบัติด้านผลงานวิชาการ ${st().windowYears} ปีย้อนหลัง</p></div>
+        ${canAddLecturer() ? `<button class="btn primary" data-action="add-lecturer">${ic('plus')}เพิ่มอาจารย์</button>` : ''}</div>
+      <div class="card">
+        <div class="toolbar">
+          <input class="input grow" type="search" placeholder="ค้นหาชื่ออาจารย์…" value="${esc(f.q)}" data-filter="lecturers.q">
+          ${scopePrograms().length > 1 ? `<select class="input" data-filter="lecturers.program"><option value="">ทุกหลักสูตร</option>${scopePrograms().map((p) => opt(p.id, p.name, f.program)).join('')}</select>` : ''}
+          <select class="input" data-filter="lecturers.status"><option value="">ทุกสถานะ</option>${Object.entries(STATUS_META).map(([k, v]) => opt(k, v.label, f.status)).join('')}${opt('inactive', 'ไม่ปฏิบัติงาน', f.status)}</select>
+        </div>
+        ${list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>ชื่อ - สกุล</th><th>หลักสูตร / ประเภท</th><th class="num">ผลงานนับได้/เกณฑ์</th><th class="num">ค่าน้ำหนัก</th><th>สถานะ</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+          : emptyState('users', 'ไม่พบข้อมูลอาจารย์', 'เพิ่มอาจารย์และกำหนดหลักสูตรเพื่อเริ่มติดตามผลงาน', canAddLecturer() ? `<button class="btn primary" data-action="add-lecturer">${ic('plus')}เพิ่มอาจารย์</button>` : '')}
+      </div>`;
+  }
+
+  function openLecturerForm(l) {
+    const editing = !!l;
+    l = l || { type: 'responsible', active: true, programId: role() === 'chair' ? S.user.programId : '' };
+    const selfOnly = role() === 'lecturer';
+    const progs = role() === 'chair' ? scopePrograms() : S.data.programs;
+    openModal({
+      title: editing ? 'แก้ไขข้อมูลอาจารย์' : 'เพิ่มอาจารย์', wide: true,
+      body: `<div class="form-grid">
+        <label class="field"><span>คำนำหน้า</span><input name="prefix" value="${esc(l.prefix)}" placeholder="เช่น ดร., นาย, นางสาว" list="prefixList">
+          <datalist id="prefixList"><option>ดร.</option><option>นาย</option><option>นาง</option><option>นางสาว</option><option>Dr.</option></datalist></label>
+        <label class="field"><span>ตำแหน่งทางวิชาการ</span><select name="position">${C.ACADEMIC_POSITIONS.map((p) => opt(p, p || '— ไม่มี —', l.position || '')).join('')}</select></label>
+        <label class="field"><span>ชื่อ - นามสกุล (ไทย) <em>*</em></span><input name="nameTh" required value="${esc(l.nameTh)}"></label>
+        <label class="field"><span>ชื่อภาษาอังกฤษ <small>(ใช้ค้นหาใน Scopus/WoS)</small></span><input name="nameEn" value="${esc(l.nameEn)}" placeholder="Firstname Lastname"></label>
+        <label class="field"><span>หลักสูตร <em>*</em></span><select name="programId" required ${selfOnly ? 'disabled' : ''}><option value="">— เลือกหลักสูตร —</option>${progs.map((p) => opt(p.id, p.name, l.programId)).join('')}</select></label>
+        <label class="field"><span>ประเภทอาจารย์</span><select name="type" ${selfOnly ? 'disabled' : ''}>${C.LECTURER_TYPES.map((t) => opt(t.id, t.label, l.type)).join('')}</select></label>
+        <label class="field"><span>อีเมล</span><input name="email" type="email" value="${esc(l.email)}"></label>
+        <label class="field"><span>วุฒิการศึกษาสูงสุด</span><input name="degree" value="${esc(l.degree)}" placeholder="เช่น ปร.ด. (ชีวเคมี)"></label>
+        <label class="field"><span>Scopus Author ID</span><input name="scopusId" value="${esc(l.scopusId)}" inputmode="numeric"></label>
+        <label class="field"><span>ORCID</span><input name="orcid" value="${esc(l.orcid)}" placeholder="0000-0000-0000-0000"></label>
+        ${selfOnly ? '' : `<label class="check full"><input type="checkbox" name="active" ${l.active !== false ? 'checked' : ''}> ปฏิบัติงานอยู่</label>`}
+      </div>`,
+      onSubmit: async (v) => {
+        const rec = Object.assign({}, l, { id: l.id || uid('l') });
+        ['prefix', 'position', 'nameTh', 'nameEn', 'email', 'degree', 'scopusId', 'orcid'].forEach((k) => { rec[k] = (v[k] || '').trim(); });
+        if (!selfOnly) { rec.programId = v.programId; rec.type = v.type; rec.active = v.active === 'on'; }
+        if (!canEditLecturer(rec)) throw new Error('ไม่มีสิทธิ์จัดการอาจารย์ในหลักสูตรนี้');
+        await upsert('lecturers', rec);
+        toast(editing ? 'บันทึกข้อมูลอาจารย์แล้ว' : 'เพิ่มอาจารย์แล้ว');
+        if (!editing) location.hash = '#/lecturer/' + rec.id; else render();
+      },
+    });
+  }
+
+  function renderLecturer(id) {
+    const l = byId(S.data.lecturers, id);
+    if (!l || !scopeLecturers().includes(l)) return emptyState('user', 'ไม่พบข้อมูลอาจารย์', 'อาจถูกลบหรือคุณไม่มีสิทธิ์เข้าถึง', '<a class="btn" href="#/lecturers">กลับ</a>');
+    const e = evalLecturer(l);
+    const works = e.all.slice().sort((a, b) => toBE(b.year) - toBE(a.year));
+    const links = C.searchLinks(l);
+    const years = [];
+    for (let y = windowStart(); y <= st().refYear; y++) years.push(y);
+    const timeline = years.map((y) => {
+      const ws = works.filter((w) => toBE(w.year) === y && w.status !== 'rejected');
+      return `<div class="bar-row"><span class="bar-label">${y}${y === windowStart() ? ' ' + chip('ปีสุดท้ายที่นับ', 'warning') : ''}</span>
+        <div class="bar-track">${ws.map((w) => `<div class="bar-fill" title="${esc(w.title)}" style="width:${100 / Math.max(3, ws.length)}%;background:${w.status === 'verified' ? catOf(w.category).color : 'var(--warning)'};border-right:2px solid var(--surface)"></div>`).join('')}</div>
+        <span class="bar-val">${ws.length} เรื่อง</span></div>`;
+    }).join('');
+    const rows = works.map((w) => {
+      const s = C.STATUSES[w.status] || C.STATUSES.pending;
+      return `<tr><td><div class="cell-title">${esc(w.title)}</div><div class="cell-sub">${esc(w.journal || typeOf(w.type).label)} ${w.quartile ? '· ' + esc(w.quartile) : ''}</div></td>
+        <td class="nowrap">${toBE(w.year)} ${isExpired(w) ? chip('เกิน ' + st().windowYears + ' ปี', 'neutral') : isExpiring(w) ? chip('ใกล้หมดอายุ', 'warning') : ''}</td>
+        <td>${esc(catOf(w.category).short)}</td><td class="num">${isCountable(w) ? fmt(weightOf(w)) : '<span class="muted">0.00</span>'}</td><td>${chip(s.label, s.tone, true)}</td>
+        <td class="actions">${canVerify(w) && w.status === 'pending' ? `<button class="btn sm" data-action="verify-work" data-id="${w.id}">${ic('shield')}</button>` : ''}${canEditWork(w) ? `<button class="btn sm" data-action="edit-work" data-id="${w.id}">${ic('edit')}</button>` : `<button class="btn sm" data-action="view-work" data-id="${w.id}">${ic('info')}</button>`}</td></tr>`;
+    }).join('');
+    return `
+      <div class="page-head no-print"><a href="#/lecturers" class="btn ghost sm">← กลับ</a>
+        <div class="btn-row">${canEditLecturer(l) ? `<button class="btn" data-action="edit-lecturer" data-id="${l.id}">${ic('edit')}แก้ไขข้อมูล</button>` : ''}<a class="btn" href="#/report/lecturer/${l.id}">${ic('printer')}รายงานรายบุคคล</a>${canEditWork({ lecturerId: l.id }) ? `<button class="btn primary" data-action="add-work" data-lecturer="${l.id}">${ic('plus')}เพิ่มผลงาน</button>` : ''}</div></div>
+      <div class="grid side">
+        <div class="stack">
+          <div class="card card-pad"><div class="profile-head"><div class="avatar">${esc(initials(l.nameTh))}</div><div>
+            <h1 style="font-size:21px">${esc(lecturerName(l, true))}</h1>
+            <div class="muted">${esc(l.nameEn || '')}</div>
+            <div class="tag-list mt" style="margin-top:6px">${chip(lecTypeOf(l.type).label, 'primary')}${chip(programName(l.programId), 'neutral')}${l.active === false ? chip('ไม่ปฏิบัติงาน', 'danger') : ''}</div></div></div></div>
+          ${lecturerVerdictCard(l)}
+          <div class="card"><div class="card-head"><h2>${ic('doc')} ผลงานวิชาการ (${works.length})</h2></div>
+            ${works.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>ผลงาน</th><th>ปี</th><th>ฐาน</th><th class="num">น้ำหนัก</th><th>สถานะ</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+              : emptyState('doc', 'ยังไม่มีผลงาน', 'ค้นหาชื่อในฐานข้อมูลทางด้านขวา แล้วบันทึกผลงานที่พบ')}
+          </div>
+          <div class="card"><div class="card-head"><h2>${ic('clock')} ผลงานรายปี (${windowStart()}–${st().refYear})</h2></div><div class="card-body"><div class="bars">${timeline}</div></div></div>
+        </div>
+        <div class="stack">
+          <div class="card"><div class="card-head"><h3>${ic('search')} ค้นหาชื่อในฐานข้อมูล</h3></div>
+            <div class="card-body"><p class="muted small" style="margin-top:0">เปิดค้นชื่อผู้แต่งในแต่ละฐาน แล้วตรวจผลงานตามเกณฑ์ ก.พ.อ. 2562 ${l.nameEn ? '' : '<br><b style="color:var(--warning)">ควรเพิ่มชื่อภาษาอังกฤษเพื่อค้น Scopus/WoS</b>'}</p>
+            <div class="stack" style="gap:8px">${links.map((x) => `<a class="db-link" href="${esc(x.url)}" target="_blank" rel="noopener"><span class="db-badge tone-primary">${esc(x.k)}</span><span style="min-width:0"><span class="t">${esc(x.label)}</span><span class="h" style="display:block">${esc(x.hint)}</span></span><span style="margin-left:auto" class="muted">${ic('external')}</span></a>`).join('')}</div></div></div>
+          <div class="card card-pad"><dl class="kv">
+            <dt>วุฒิการศึกษา</dt><dd>${esc(l.degree || '—')}</dd><dt>อีเมล</dt><dd>${esc(l.email || '—')}</dd>
+            <dt>Scopus ID</dt><dd>${esc(l.scopusId || '—')}</dd><dt>ORCID</dt><dd>${esc(l.orcid || '—')}</dd>
+            <dt>ค่าน้ำหนักรวม</dt><dd>${fmt(e.weight)}</dd></dl></div>
+        </div>
+      </div>`;
+  }
+
+  // ================= Pages: Programs =================
+  function renderPrograms() {
+    const progs = scopePrograms();
+    const rows = progs.map((p) => {
+      const e = evalProgram(p, 'window');
+      return `<tr><td><div class="cell-title">${esc(p.name)}</div><div class="cell-sub">${esc(p.degree || '')}</div></td>
+        <td>${esc((C.LEVELS[p.level] || C.LEVELS.bachelor).label)}</td>
+        <td class="num">${e.responsible.length}</td><td class="num">${e.lecs.length}</td>
+        <td class="num">${e.passCount}/${e.lecs.length}</td>
+        <td>${esc(p.chair || chairNameOf(p.id) || '—')}</td>
+        <td class="actions">${isAdmin() ? `<button class="btn sm" data-action="edit-program" data-id="${p.id}">${ic('edit')}</button><button class="btn sm danger" data-action="delete-program" data-id="${p.id}">${ic('trash')}</button>` : ''}<a class="btn sm" href="#/report/program/${p.id}" title="รายงาน">${ic('printer')}</a></td></tr>`;
+    }).join('');
+    return `
+      <div class="page-head"><div><h1>หลักสูตร</h1><p>หลักสูตรที่เปิดสอนและอาจารย์ในหลักสูตร</p></div>${isAdmin() ? `<button class="btn primary" data-action="add-program">${ic('plus')}เพิ่มหลักสูตร</button>` : ''}</div>
+      <div class="card">${progs.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>หลักสูตร</th><th>ระดับ</th><th class="num">ผู้รับผิดชอบ</th><th class="num">อาจารย์ทั้งหมด</th><th class="num">ผ่านเกณฑ์</th><th>ประธานหลักสูตร</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : emptyState('layers', 'ยังไม่มีหลักสูตร', 'เริ่มต้นด้วยการเพิ่มหลักสูตรที่เปิดสอน', isAdmin() ? `<button class="btn primary" data-action="add-program">${ic('plus')}เพิ่มหลักสูตร</button>` : '')}</div>`;
+  }
+  function chairNameOf(programId) {
+    const u = S.data.users.find((x) => x.role === 'chair' && x.programId === programId);
+    return u ? u.displayName : '';
+  }
+  function openProgramForm(p) {
+    const editing = !!p;
+    p = p || { level: 'bachelor' };
+    openModal({
+      title: editing ? 'แก้ไขหลักสูตร' : 'เพิ่มหลักสูตร',
+      body: `<div class="form-grid">
+        <label class="field full"><span>ชื่อหลักสูตร / สาขาวิชา <em>*</em></span><input name="name" required value="${esc(p.name)}" placeholder="เช่น วิทยาศาสตรมหาบัณฑิต สาขาวิชาชีวเคมี"></label>
+        <label class="field"><span>ชื่อปริญญา (ย่อ)</span><input name="degree" value="${esc(p.degree)}" placeholder="เช่น วท.ม."></label>
+        <label class="field"><span>ระดับ</span><select name="level">${Object.entries(C.LEVELS).map(([k, v]) => opt(k, v.label, p.level)).join('')}</select></label>
+        <label class="field"><span>ประธานหลักสูตร</span><input name="chair" value="${esc(p.chair)}"></label>
+        <label class="field"><span>ปี พ.ศ. หลักสูตร (ปรับปรุง)</span><input name="curriculumYear" value="${esc(p.curriculumYear)}" inputmode="numeric"></label>
+      </div>`,
+      onSubmit: async (v) => {
+        const rec = Object.assign({}, p, { id: p.id || uid('p') }, { name: v.name.trim(), degree: v.degree.trim(), level: v.level, chair: v.chair.trim(), curriculumYear: v.curriculumYear.trim() });
+        await upsert('programs', rec);
+        toast('บันทึกหลักสูตรแล้ว');
+        render();
+      },
+    });
+  }

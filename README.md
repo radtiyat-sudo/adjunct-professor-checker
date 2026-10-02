@@ -127,8 +127,17 @@ python3 -m http.server 8000
 ## ติดตั้งบน Google Sheets + Apps Script (แนะนำ — ใช้งานหลายคนพร้อมกัน)
 เปิดระบบจาก URL ของ Apps Script ได้เลย ไม่ต้องใช้ GitHub Pages
 1. เปิด Google Sheet ที่จะใช้เก็บข้อมูล แล้วไปที่ **ส่วนขยาย > Apps Script**
-2. ในไฟล์ `Code.gs` ลบโค้ดเดิมให้หมด แล้ววางโค้ดจาก [`apps-script/Code.gs`](apps-script/Code.gs) (261 บรรทัด)
-3. กด **+ > HTML** ตั้งชื่อว่า `index` (ไม่ต้องพิมพ์ .html) ลบเนื้อหาเดิมทิ้ง แล้ววางเนื้อหาจาก [`apps-script/index.html`](apps-script/index.html) (ไฟล์เดียวที่รวมหน้าเว็บทั้งหมด)
+2. ในไฟล์ `Code.gs` ลบโค้ดเดิมให้หมด แล้ววางโค้ดจาก [`apps-script/Code.gs`](apps-script/Code.gs)
+3. สร้างไฟล์ HTML ให้ครบ **10 ไฟล์** โดยกด **+ > HTML** แล้วตั้งชื่อตามตาราง (ไม่ต้องพิมพ์ .html) จากนั้นวางเนื้อหาจากไฟล์ชื่อเดียวกันในโฟลเดอร์ [`apps-script/`](apps-script/)
+   หน้าเว็บถูกแบ่งเป็นไฟล์ย่อยเพื่อให้คัดลอกได้ครบ และ `Code.gs` จะรวมไฟล์ให้เองตอนเปิดเว็บ
+
+   | ชื่อไฟล์ใน Apps Script | เนื้อหา |
+   |---|---|
+   | `index` | โครงหน้าเว็บ |
+   | `css` | ธีมสว่าง/มืด และ layout |
+   | `criteria` | เกณฑ์ ก.พ.อ. 2562 ค่าน้ำหนัก และเกณฑ์ผู้ทรงคุณวุฒิภายนอก |
+   | `app1` … `app7` | โค้ดการทำงานของระบบ (ต้องครบทั้ง 7 ไฟล์) |
+
 4. บันทึก เลือกฟังก์ชัน `setup` แล้วกด **Run** หนึ่งครั้ง จากนั้นอนุญาตสิทธิ์ ระบบจะสร้างชีต Programs, Lecturers, Works, Users, Externals, Settings และบัญชี `admin` / `admin1234`
 5. **Deploy > New deployment > Web app** ตั้ง Execute as: **Me** และ Who has access: **Anyone** (หรือ "Anyone within mahidol.ac.th" ถ้าต้องการให้เข้าได้เฉพาะคนในองค์กร)
 6. เปิด URL ที่ลงท้ายด้วย `/exec` แล้วเข้าสู่ระบบด้วย `admin` จากนั้น **เปลี่ยนรหัสผ่านทันที**
@@ -141,7 +150,7 @@ python3 -m http.server 8000
 
 ถ้าโฮสต์หน้าเว็บแยกไว้ที่ GitHub Pages ก็ยังใช้ได้ ให้นำ URL `/exec` ไปใส่ที่ **จัดการระบบ > การเชื่อมต่อ**
 
-> นักพัฒนา: เมื่อแก้ `index.html` หรือไฟล์ใน `assets/` ให้รัน `python3 tools/build_gas.py` เพื่อสร้าง `apps-script/index.html` ใหม่
+> นักพัฒนา: เมื่อแก้ `index.html` หรือไฟล์ใน `assets/` ให้รัน `python3 tools/build_gas.py` เพื่อสร้างไฟล์ใน `apps-script/` ใหม่
 
 ## โครงสร้างไฟล์
 ```
@@ -150,8 +159,8 @@ assets/styles.css     ธีม (สว่าง/มืด) และ layout res
 assets/criteria.js    เกณฑ์ ก.พ.อ. 2562, ค่าน้ำหนัก, เกณฑ์ผู้ทรงคุณวุฒิภายนอก, FAQ, ลิงก์ฐานข้อมูล
 assets/app.js         ตรรกะของระบบทั้งหมด
 apps-script/Code.gs   ฝั่งเซิร์ฟเวอร์ Apps Script + Google Sheets
-apps-script/index.html หน้าเว็บรวมไฟล์เดียวสำหรับ Apps Script (สร้างจาก tools/build_gas.py)
-tools/build_gas.py    สคริปต์รวมไฟล์
+apps-script/*.html     หน้าเว็บสำหรับ Apps Script แบ่งเป็นไฟล์ย่อย (สร้างจาก tools/build_gas.py)
+tools/build_gas.py     สคริปต์สร้างไฟล์ใน apps-script/
 ```
 
 > สรุปเกณฑ์ในระบบจัดทำขึ้นเพื่อช่วยการตรวจสอบเท่านั้น ให้ยึดประกาศฉบับเต็มของ ก.พ.อ. และมหาวิทยาลัยเป็นหลัก

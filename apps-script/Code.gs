@@ -4,7 +4,8 @@
  *
  * วิธีติดตั้ง
  * 1) เปิด Google Sheet > ส่วนขยาย > Apps Script > วางโค้ดนี้ในไฟล์ Code.gs
- * 2) กด + > HTML ตั้งชื่อ index แล้ววางเนื้อหาไฟล์ apps-script/index.html (ไฟล์รวมหน้าเว็บทั้งหมด)
+ * 2) กด + > HTML สร้างไฟล์ตามชื่อไฟล์ในโฟลเดอร์ apps-script/ (index, css, criteria, app1, app2, …)
+ *    แล้ววางเนื้อหาแต่ละไฟล์ให้ตรงชื่อ (ไม่ต้องพิมพ์ .html)
  * 3) เลือกฟังก์ชัน setup แล้วกด Run หนึ่งครั้ง (อนุญาตสิทธิ์) — จะสร้างชีตและบัญชี admin / admin1234
  * 4) Deploy > New deployment > Web app · Execute as: Me · Who has access: Anyone (หรือเฉพาะในองค์กร)
  * 5) เปิด URL (.../exec) จะเห็นหน้าเข้าสู่ระบบ — เข้าด้วย admin แล้วเปลี่ยนรหัสผ่านทันที
@@ -44,9 +45,27 @@ function setup() {
 // เปิดหน้าเว็บของระบบ (ไฟล์ index.html ในโปรเจกต์ Apps Script) — ?ping=1 ใช้ทดสอบว่าเว็บแอปทำงาน
 function doGet(e) {
   if (e && e.parameter && e.parameter.ping) return json({ ok: true, service: 'mugr-academic-tracker', time: new Date().toISOString() });
-  return HtmlService.createHtmlOutputFromFile('index')
-    .setTitle('ระบบติดตามผลงานวิชาการ | บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  try {
+    return HtmlService.createTemplateFromFile('index').evaluate()
+      .setTitle('ระบบติดตามผลงานวิชาการ | บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  } catch (err) {
+    return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;max-width:640px;margin:40px auto;padding:0 16px">' +
+      '<h2>ติดตั้งไฟล์ไม่ครบ</h2><p>' + String(err && err.message || err).replace(/</g, '&lt;') + '</p>' +
+      '<p>ตรวจว่ามีไฟล์ HTML ครบ: index, css, criteria, app1 … app' + APP_PARTS + ' (สะกดตรงทุกตัว ไม่ต้องมี .html) แล้ว Deploy เป็น New version</p></div>');
+  }
+}
+
+// จำนวนไฟล์ app1…appN (ตรงกับผลจาก tools/build_gas.py)
+var APP_PARTS = 7;
+
+// รวมไฟล์ย่อย (css, criteria, app1, app2, …) เข้าในหน้า index
+function include(name) {
+  try {
+    return HtmlService.createHtmlOutputFromFile(name).getContent();
+  } catch (err) {
+    throw new Error('ไม่พบไฟล์ HTML ชื่อ "' + name + '" ในโปรเจกต์ Apps Script');
+  }
 }
 
 // เรียกจากหน้าเว็บที่เปิดผ่าน Apps Script (google.script.run.api)
