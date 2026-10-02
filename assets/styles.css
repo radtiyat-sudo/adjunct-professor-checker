@@ -9,8 +9,8 @@
   --primary: #1d3f8f;
   --primary-strong: #142e6b;
   --primary-soft: #e7edfb;
-  --accent: #d5841a;
-  --accent-soft: #fdf0dd;
+  --accent: #c8961e;
+  --accent-soft: #fbf3df;
   --success: #12804f;
   --success-soft: #e3f5ec;
   --warning: #a46200;
@@ -87,7 +87,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   position: sticky; top: 0; height: 100vh; z-index: 40;
 }
 .brand { display: flex; gap: 11px; align-items: center; padding: 4px 8px 20px; }
-.brand-logo { width: 40px; height: 40px; border-radius: 11px; background: linear-gradient(135deg, #d5841a, #f0b44c); color: #3a1d00; display: grid; place-items: center; flex: none; }
+.brand-logo { width: 40px; height: 40px; border-radius: 11px; background: linear-gradient(135deg, #c8961e, #f0c75a); color: #142e6b; display: grid; place-items: center; flex: none; }
 .brand-title { color: #fff; font-weight: 700; font-size: 15px; }
 .brand-sub { font-size: 11.5px; opacity: .75; }
 .nav { display: flex; flex-direction: column; gap: 3px; }

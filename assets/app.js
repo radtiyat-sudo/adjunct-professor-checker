@@ -1,4 +1,4 @@
-/* ระบบติดตามผลงานวิชาการ — วิทยาลัยสงฆ์นครพนม
+/* ระบบติดตามผลงานวิชาการ บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)
  * Single-page app (vanilla JS). เก็บข้อมูลใน localStorage หรือเชื่อมต่อ Google Sheets ผ่าน Apps Script (apps-script/Code.gs)
  */
 (function () {
@@ -79,8 +79,9 @@
   }
 
   // ================= Store =================
-  const KEY = 'npc.data';
-  const SESSION = 'npc.session';
+  const KEY = 'mugr.data';
+  const SESSION = 'mugr.session';
+  const OLD_NAMES = ['วิทยาลัยสงฆ์นครพนม'];
   const ENTITIES = ['programs', 'lecturers', 'works', 'users', 'externals'];
 
   function defaultSettings() {
@@ -88,8 +89,8 @@
     C.CATEGORIES.forEach((c) => { weights[c.id] = c.weight; if (c.quartile) C.QUARTILES.forEach((q) => { weights[c.id + ':' + q] = c.weight; }); });
     return {
       id: 'settings',
-      collegeName: 'วิทยาลัยสงฆ์นครพนม',
-      university: 'มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย',
+      collegeName: 'บัณฑิตวิทยาลัย (MUGR)',
+      university: 'มหาวิทยาลัยมหิดล',
       refYear: nowBE(),
       windowYears: 5,
       weights,
@@ -109,11 +110,16 @@
     s.weights = Object.assign({}, def.weights, s.weights || {});
     s.targets = Object.assign({}, def.targets, s.targets || {});
     s.requirements = Object.assign({}, def.requirements, s.requirements || {});
+    if (OLD_NAMES.includes(s.collegeName)) { s.collegeName = def.collegeName; s.university = def.university; }
     d.settings = s;
     return d;
   }
 
   function loadLocal() {
+    try { // ย้ายข้อมูลจากชื่อคีย์เดิม (ยกเว้นข้อมูลตัวอย่างชุดเก่า)
+      const old = localStorage.getItem('npc.data');
+      if (!localStorage.getItem(KEY) && old && !((JSON.parse(old).settings || {}).demo)) localStorage.setItem(KEY, old);
+    } catch (e) {}
     try { const raw = localStorage.getItem(KEY); if (raw) return normalize(JSON.parse(raw)); } catch (e) { console.warn(e); }
     return null;
   }
@@ -121,7 +127,7 @@
     if (S.remote) return;
     try { localStorage.setItem(KEY, JSON.stringify(S.data)); } catch (e) { toast('บันทึกไม่สำเร็จ: พื้นที่จัดเก็บเต็มหรือถูกบล็อก', 'error'); }
   }
-  const apiUrl = () => { try { return localStorage.getItem('npc.api') || ''; } catch (e) { return ''; } };
+  const apiUrl = () => { try { return localStorage.getItem('mugr.api') || ''; } catch (e) { return ''; } };
 
   async function api(action, payload) {
     const res = await fetch(apiUrl(), {
@@ -735,15 +741,15 @@
     openModal({
       title: editing ? 'แก้ไขข้อมูลอาจารย์' : 'เพิ่มอาจารย์', wide: true,
       body: `<div class="form-grid">
-        <label class="field"><span>คำนำหน้า / สมณศักดิ์</span><input name="prefix" value="${esc(l.prefix)}" placeholder="เช่น พระมหา, พระครู, ดร., นาย" list="prefixList">
-          <datalist id="prefixList"><option>พระ</option><option>พระมหา</option><option>พระครู</option><option>ดร.</option><option>พระมหา ดร.</option><option>นาย</option><option>นาง</option><option>นางสาว</option></datalist></label>
+        <label class="field"><span>คำนำหน้า</span><input name="prefix" value="${esc(l.prefix)}" placeholder="เช่น ดร., นาย, นางสาว" list="prefixList">
+          <datalist id="prefixList"><option>ดร.</option><option>นาย</option><option>นาง</option><option>นางสาว</option><option>Dr.</option></datalist></label>
         <label class="field"><span>ตำแหน่งทางวิชาการ</span><select name="position">${C.ACADEMIC_POSITIONS.map((p) => opt(p, p || '— ไม่มี —', l.position || '')).join('')}</select></label>
-        <label class="field"><span>ชื่อ - ฉายา/นามสกุล (ไทย) <em>*</em></span><input name="nameTh" required value="${esc(l.nameTh)}"></label>
+        <label class="field"><span>ชื่อ - นามสกุล (ไทย) <em>*</em></span><input name="nameTh" required value="${esc(l.nameTh)}"></label>
         <label class="field"><span>ชื่อภาษาอังกฤษ <small>(ใช้ค้นหาใน Scopus/WoS)</small></span><input name="nameEn" value="${esc(l.nameEn)}" placeholder="Firstname Lastname"></label>
         <label class="field"><span>หลักสูตร <em>*</em></span><select name="programId" required ${selfOnly ? 'disabled' : ''}><option value="">— เลือกหลักสูตร —</option>${progs.map((p) => opt(p.id, p.name, l.programId)).join('')}</select></label>
         <label class="field"><span>ประเภทอาจารย์</span><select name="type" ${selfOnly ? 'disabled' : ''}>${C.LECTURER_TYPES.map((t) => opt(t.id, t.label, l.type)).join('')}</select></label>
         <label class="field"><span>อีเมล</span><input name="email" type="email" value="${esc(l.email)}"></label>
-        <label class="field"><span>วุฒิการศึกษาสูงสุด</span><input name="degree" value="${esc(l.degree)}" placeholder="เช่น ปร.ด. (พระพุทธศาสนา)"></label>
+        <label class="field"><span>วุฒิการศึกษาสูงสุด</span><input name="degree" value="${esc(l.degree)}" placeholder="เช่น ปร.ด. (ชีวเคมี)"></label>
         <label class="field"><span>Scopus Author ID</span><input name="scopusId" value="${esc(l.scopusId)}" inputmode="numeric"></label>
         <label class="field"><span>ORCID</span><input name="orcid" value="${esc(l.orcid)}" placeholder="0000-0000-0000-0000"></label>
         ${selfOnly ? '' : `<label class="check full"><input type="checkbox" name="active" ${l.active !== false ? 'checked' : ''}> ปฏิบัติงานอยู่</label>`}
@@ -836,8 +842,8 @@
     openModal({
       title: editing ? 'แก้ไขหลักสูตร' : 'เพิ่มหลักสูตร',
       body: `<div class="form-grid">
-        <label class="field full"><span>ชื่อหลักสูตร / สาขาวิชา <em>*</em></span><input name="name" required value="${esc(p.name)}" placeholder="เช่น พุทธศาสตรบัณฑิต สาขาวิชาพระพุทธศาสนา"></label>
-        <label class="field"><span>ชื่อปริญญา (ย่อ)</span><input name="degree" value="${esc(p.degree)}" placeholder="เช่น พธ.บ."></label>
+        <label class="field full"><span>ชื่อหลักสูตร / สาขาวิชา <em>*</em></span><input name="name" required value="${esc(p.name)}" placeholder="เช่น วิทยาศาสตรมหาบัณฑิต สาขาวิชาชีวเคมี"></label>
+        <label class="field"><span>ชื่อปริญญา (ย่อ)</span><input name="degree" value="${esc(p.degree)}" placeholder="เช่น วท.ม."></label>
         <label class="field"><span>ระดับ</span><select name="level">${Object.entries(C.LEVELS).map(([k, v]) => opt(k, v.label, p.level)).join('')}</select></label>
         <label class="field"><span>ประธานหลักสูตร</span><input name="chair" value="${esc(p.chair)}"></label>
         <label class="field"><span>ปี พ.ศ. หลักสูตร (ปรับปรุง)</span><input name="curriculumYear" value="${esc(p.curriculumYear)}" inputmode="numeric"></label>
@@ -892,7 +898,7 @@
     }).join('');
     return `
       <div class="page-head"><div><h1>ประเมินคุณภาพหลักสูตร</h1><p>ตัวบ่งชี้ผลงานวิชาการของอาจารย์ผู้รับผิดชอบหลักสูตร · ปีประเมิน ${st().refYear}</p></div>
-        <div class="btn-row"><a class="btn" href="#/report/college">${ic('printer')}รายงานภาพรวมวิทยาลัย</a></div></div>
+        <div class="btn-row"><a class="btn" href="#/report/college">${ic('printer')}รายงานภาพรวมบัณฑิตวิทยาลัย</a></div></div>
       <div class="tabs"><button class="${mode === 'year' ? 'active' : ''}" data-action="tab" data-tab="assessMode" data-value="year">ผลงานปี ${st().refYear} (ตามคู่มือ QA)</button><button class="${mode === 'window' ? 'active' : ''}" data-action="tab" data-tab="assessMode" data-value="window">ผลงานสะสม ${st().windowYears} ปี (${windowStart()}–${st().refYear})</button></div>
       <div class="card mb">${progs.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>หลักสูตร</th><th class="num">อ.ผู้รับผิดชอบ</th><th class="num">จำนวนผลงาน</th><th class="num">ผลรวมถ่วงน้ำหนัก</th><th class="num">ร้อยละ</th><th class="num">คะแนน (5)</th><th>ระดับ</th><th class="num">อ.ผ่านเกณฑ์</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : emptyState('chart', 'ยังไม่มีหลักสูตร', '')}</div>
       <div class="card card-pad"><h3 style="font-size:15px;margin-bottom:8px">${ic('info')} วิธีคำนวณ</h3>
@@ -914,7 +920,7 @@
         <div class="card"><div class="card-head"><h2>${ic('user')} รายงานผลงานรายบุคคล</h2></div><div class="card-body">
           <label class="field"><span>เลือกอาจารย์</span><select class="input" id="reportLecturer">${lecs.map((l) => opt(l.id, lecturerName(l) + ' · ' + programName(l.programId))).join('')}</select></label>
           <button class="btn primary mt" data-action="open-lecturer-report" ${lecs.length ? '' : 'disabled'}>${ic('printer')}เปิดรายงาน</button></div></div>
-        ${role() === 'admin' || role() === 'executive' ? `<div class="card"><div class="card-head"><h2>${ic('chart')} รายงานภาพรวมวิทยาลัย</h2></div><div class="card-body"><p class="muted" style="margin-top:0">สรุปคะแนนทุกหลักสูตร สถานะอาจารย์ และสัดส่วนผลงาน</p><a class="btn primary" href="#/report/college">${ic('printer')}เปิดรายงาน</a></div></div>` : ''}
+        ${role() === 'admin' || role() === 'executive' ? `<div class="card"><div class="card-head"><h2>${ic('chart')} รายงานภาพรวมบัณฑิตวิทยาลัย</h2></div><div class="card-body"><p class="muted" style="margin-top:0">สรุปคะแนนทุกหลักสูตร สถานะอาจารย์ และสัดส่วนผลงาน</p><a class="btn primary" href="#/report/college">${ic('printer')}เปิดรายงาน</a></div></div>` : ''}
         <div class="card"><div class="card-head"><h2>${ic('download')} ส่งออกข้อมูล</h2></div><div class="card-body"><p class="muted" style="margin-top:0">ไฟล์ CSV เปิดด้วย Excel / Google Sheets ได้ (รองรับภาษาไทย)</p><button class="btn" data-action="export-csv">${ic('download')}ผลงานทั้งหมด (CSV)</button></div></div>
       </div>`;
   }
@@ -956,7 +962,7 @@
         <div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>ชื่อ - สกุล</th><th>ประเภท</th><th class="num">ผลงาน/เกณฑ์</th><th class="num">ค่าน้ำหนัก</th><th>ผล</th></tr></thead><tbody>${lecRows}</tbody></table></div>
         <h3 class="mt" style="font-size:16px">2. รายการผลงานของอาจารย์ผู้รับผิดชอบหลักสูตร (${windowStart()}–${st().refYear})</h3>
         ${worksTable(works, true)}
-        ${signBlock(p.chair || chairNameOf(p.id) || 'ประธานหลักสูตร', 'ผู้อำนวยการ / ผู้บริหาร')}</div>`;
+        ${signBlock(p.chair || chairNameOf(p.id) || 'ประธานหลักสูตร', 'คณบดีบัณฑิตวิทยาลัย')}</div>`;
     }
     if (kind === 'lecturer') {
       const l = byId(scopeLecturers(), id);
@@ -979,11 +985,11 @@
       const ws = S.data.works.filter((w) => inWindow(w) && w.status === 'verified');
       const byCat = C.CATEGORIES.map((c) => ({ label: c.short, color: c.color, value: ws.filter((w) => w.category === c.id).length }));
       return `${reportBar('#/reports')}<div class="card card-pad">
-        ${reportHeader('รายงานสรุปผลงานวิชาการระดับวิทยาลัย', 'ทุกหลักสูตร')}
+        ${reportHeader('รายงานสรุปผลงานวิชาการระดับบัณฑิตวิทยาลัย', 'ทุกหลักสูตร')}
         <div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>หลักสูตร</th><th>ระดับ</th><th class="num">อ.ผู้รับผิดชอบ</th><th class="num">ผลรวมถ่วงน้ำหนัก</th><th class="num">ร้อยละ</th><th class="num">คะแนนปี ${st().refYear}</th><th class="num">คะแนนสะสม ${st().windowYears} ปี</th><th class="num">อ.ผ่านเกณฑ์</th></tr></thead><tbody>${rows}</tbody>
-        <tfoot><tr><td colspan="6" class="num"><b>คะแนนเฉลี่ยระดับวิทยาลัย</b></td><td class="num"><b>${fmt(avg)}</b></td><td colspan="2"></td></tr></tfoot></table></div>
+        <tfoot><tr><td colspan="6" class="num"><b>คะแนนเฉลี่ยระดับบัณฑิตวิทยาลัย</b></td><td class="num"><b>${fmt(avg)}</b></td><td colspan="2"></td></tr></tfoot></table></div>
         <h3 class="mt" style="font-size:16px">สัดส่วนผลงานที่รับรองแล้ว (${windowStart()}–${st().refYear})</h3><div class="mt">${donut(byCat, 'ผลงาน')}</div>
-        ${signBlock('ผู้รับผิดชอบงานประกันคุณภาพ', 'ผู้อำนวยการวิทยาลัย')}</div>`;
+        ${signBlock('ผู้รับผิดชอบงานประกันคุณภาพ', 'คณบดีบัณฑิตวิทยาลัย')}</div>`;
     }
     return emptyState('printer', 'ไม่พบรายงาน', '', '<a class="btn" href="#/reports">กลับ</a>');
   }
@@ -1074,13 +1080,13 @@
     openModal({
       title: editing ? 'แก้ไขข้อมูลบุคคลภายนอก' : 'ตรวจคุณสมบัติบุคคลภายนอก', wide: true,
       body: `<div class="form-grid">
-        <label class="field"><span>คำนำหน้า / สมณศักดิ์</span><input name="prefix" value="${esc(x.prefix)}" placeholder="เช่น พระมหา, ดร., นาย"></label>
+        <label class="field"><span>คำนำหน้า</span><input name="prefix" value="${esc(x.prefix)}" placeholder="เช่น ดร., นาย, Dr."></label>
         <label class="field"><span>ตำแหน่งทางวิชาการ</span><select name="position">${C.ACADEMIC_POSITIONS.map((p) => opt(p, p || '— ไม่มี —', x.position || '')).join('')}</select></label>
         <label class="field"><span>ชื่อ - สกุล (ไทย) <em>*</em></span><input name="nameTh" required value="${esc(x.nameTh)}"></label>
         <label class="field"><span>ชื่อภาษาอังกฤษ <small>(ใช้ค้น Scopus/WoS)</small></span><input name="nameEn" value="${esc(x.nameEn)}" placeholder="Firstname Lastname"></label>
         <label class="field full"><span>หน่วยงาน / สถาบันต้นสังกัด</span><input name="affiliation" value="${esc(x.affiliation)}"></label>
         <label class="field"><span>วุฒิการศึกษาสูงสุด <em>*</em></span><select name="degreeLevel">${Object.entries(DEGREE_LEVELS).map(([k, v]) => opt(k, v, x.degreeLevel)).join('')}</select></label>
-        <label class="field"><span>ชื่อปริญญา / สาขา</span><input name="degreeName" value="${esc(x.degreeName)}" placeholder="เช่น Ph.D. (Buddhist Studies)"></label>
+        <label class="field"><span>ชื่อปริญญา / สาขา</span><input name="degreeName" value="${esc(x.degreeName)}" placeholder="เช่น Ph.D. (Epidemiology)"></label>
         <label class="field"><span>บทบาทที่เชิญ</span><select name="role">${C.EXTERNAL_ROLES.map((r) => opt(r, r, x.role)).join('')}</select></label>
         <label class="field"><span>หลักสูตรที่เชิญ</span><select name="programId"><option value="">— ไม่ระบุ —</option>${progs.map((p) => opt(p.id, p.name, x.programId)).join('')}</select></label>
         <label class="field"><span>ระดับการสอบ / หลักสูตร</span><select name="examLevel">${Object.entries(EXAM_LEVELS).map(([k, v]) => opt(k, v, x.examLevel)).join('')}</select></label>
@@ -1207,7 +1213,7 @@
       <h3 class="mt" style="font-size:16px">ผลการตรวจเทียบเกณฑ์</h3>${externalMatrix(x)}
       <h3 class="mt" style="font-size:16px">รายการผลงานที่ตรวจพบในฐานข้อมูล</h3>
       ${pubs.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>ผลงาน</th><th>ปี</th><th>ฐานข้อมูล</th><th>ระดับ</th><th>ยืนยัน</th></tr></thead><tbody>${pubs.map((p, i) => { const c = catOf(p.category); return `<tr><td>${i + 1}</td><td>${esc(p.title)}<div class="cell-sub">${esc(p.journal || '')}</div></td><td>${esc(p.year || '')}</td><td>${esc(c.short)} ${esc(p.quartile || '')}</td><td>${c.kpa === 'intl' ? 'นานาชาติ' : c.kpa === 'nat' ? 'ชาติ' : 'ไม่นับ'}</td><td>${p.verified ? '✓' : '—'}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">ไม่มีผลงาน</p>'}
-      ${signBlock(x.checkedBy || 'ผู้ตรวจสอบ', 'ประธานหลักสูตร / ผู้อำนวยการ')}</div>`;
+      ${signBlock(x.checkedBy || 'ผู้ตรวจสอบ', 'ประธานหลักสูตร / คณบดีบัณฑิตวิทยาลัย')}</div>`;
   }
 
   function guideExternal() {
@@ -1295,7 +1301,7 @@
   function adminUsers() {
     const rows = S.data.users.map((u) => `<tr><td><div class="person-cell"><div class="avatar sm">${esc(initials(u.displayName))}</div><div><div class="cell-title">${esc(u.displayName)}</div><div class="cell-sub">${esc(u.username)}</div></div></div></td>
       <td>${chip(C.USER_ROLES[u.role].label, C.USER_ROLES[u.role].tone)}</td>
-      <td>${u.role === 'chair' ? esc(programName(u.programId)) : u.role === 'lecturer' ? esc(lecturerName(byId(S.data.lecturers, u.lecturerId))) : '<span class="muted">ทั้งวิทยาลัย</span>'}</td>
+      <td>${u.role === 'chair' ? esc(programName(u.programId)) : u.role === 'lecturer' ? esc(lecturerName(byId(S.data.lecturers, u.lecturerId))) : '<span class="muted">ทั้งบัณฑิตวิทยาลัย</span>'}</td>
       <td class="actions"><button class="btn sm" data-action="edit-user" data-id="${u.id}">${ic('edit')}</button>${u.id !== S.user.id ? `<button class="btn sm danger" data-action="delete-user" data-id="${u.id}">${ic('trash')}</button>` : ''}</td></tr>`).join('');
     return `<div class="card"><div class="card-head"><h2>${ic('users')} บัญชีผู้ใช้งาน (${S.data.users.length})</h2><button class="btn primary sm" data-action="add-user">${ic('plus')}เพิ่มผู้ใช้</button></div>
       <div class="table-wrap"><table class="table"><thead><tr><th>ผู้ใช้</th><th>บทบาท</th><th>ขอบเขตข้อมูล</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
@@ -1343,7 +1349,7 @@
     const reqRow = (k, label) => `<tr><td>${label}</td><td><input class="input" style="width:80px;height:34px" type="number" min="0" name="r:${k}:minWorks" value="${R[k].minWorks}"></td><td><input class="input" style="width:80px;height:34px" type="number" min="0" name="r:${k}:minResearch" value="${R[k].minResearch || 0}"></td></tr>`;
     return `<form id="settingsForm" class="stack">
       <div class="card"><div class="card-head"><h2>${ic('gear')} ข้อมูลทั่วไปและรอบประเมิน</h2></div><div class="card-body"><div class="form-grid">
-        <label class="field"><span>ชื่อวิทยาลัย / หน่วยงาน</span><input name="collegeName" value="${esc(s.collegeName)}"></label>
+        <label class="field"><span>ชื่อหน่วยงาน</span><input name="collegeName" value="${esc(s.collegeName)}"></label>
         <label class="field"><span>มหาวิทยาลัย</span><input name="university" value="${esc(s.university)}"></label>
         <label class="field"><span>ปีประเมิน (พ.ศ.)</span><input name="refYear" type="number" min="2500" max="2700" value="${s.refYear}"></label>
         <label class="field"><span>ช่วงนับผลงานย้อนหลัง (ปี)</span><input name="windowYears" type="number" min="1" max="20" value="${s.windowYears}"></label>
@@ -1391,31 +1397,31 @@
   async function sampleData() {
     const y = nowBE();
     const P = [
-      { id: 'p_bud', name: 'พุทธศาสตรบัณฑิต สาขาวิชาพระพุทธศาสนา', degree: 'พธ.บ.', level: 'bachelor' },
-      { id: 'p_soc', name: 'ครุศาสตรบัณฑิต สาขาวิชาการสอนสังคมศึกษา', degree: 'ค.บ.', level: 'bachelor' },
-      { id: 'p_pol', name: 'รัฐศาสตรบัณฑิต สาขาวิชารัฐศาสตร์', degree: 'ร.บ.', level: 'bachelor' },
-      { id: 'p_eng', name: 'ศิลปศาสตรบัณฑิต สาขาวิชาภาษาอังกฤษ', degree: 'ศศ.บ.', level: 'bachelor' },
-      { id: 'p_mpa', name: 'รัฐศาสตรมหาบัณฑิต สาขาวิชารัฐศาสตร์', degree: 'ร.ม.', level: 'master' },
+      { id: 'p_bio', name: 'วิทยาศาสตรมหาบัณฑิต สาขาวิชาชีวเคมี', degree: 'วท.ม.', level: 'master' },
+      { id: 'p_pharm', name: 'ปรัชญาดุษฎีบัณฑิต สาขาวิชาเภสัชวิทยา', degree: 'ปร.ด.', level: 'phd' },
+      { id: 'p_ph', name: 'สาธารณสุขศาสตรมหาบัณฑิต', degree: 'ส.ม.', level: 'master' },
+      { id: 'p_ling', name: 'ศิลปศาสตรมหาบัณฑิต สาขาวิชาภาษาศาสตร์', degree: 'ศศ.ม.', level: 'master' },
+      { id: 'p_pop', name: 'ปรัชญาดุษฎีบัณฑิต สาขาวิชาประชากรและการพัฒนา', degree: 'ปร.ด.', level: 'phd' },
     ];
     const names = [
-      ['พระมหา', 'สมชาย ธมฺมวโร', 'Somchai Dhammavaro', 'p_bud', 'ผู้ช่วยศาสตราจารย์'], ['พระครู', 'วิสุทธิ์ ปญฺญาธโร', 'Wisut Panyadharo', 'p_bud', ''],
-      ['ดร.', 'สุนทร แก้วมณี', 'Sunthon Kaewmanee', 'p_bud', ''], ['นางสาว', 'อรุณี ศรีสุข', 'Arunee Srisuk', 'p_bud', ''], ['พระ', 'อนุชา สุจิตฺโต', 'Anucha Sucitto', 'p_bud', ''],
-      ['ดร.', 'ประเสริฐ ทองดี', 'Prasert Thongdee', 'p_soc', 'ผู้ช่วยศาสตราจารย์'], ['นาง', 'มาลัย ใจงาม', 'Malai Jaingam', 'p_soc', ''], ['พระมหา', 'วีระ วีรธมฺโม', 'Weera Weeradhammo', 'p_soc', ''],
-      ['ดร.', 'ชัยวัฒน์ พรหมมา', 'Chaiwat Phromma', 'p_pol', 'รองศาสตราจารย์'], ['นาย', 'ธนพล บุญมา', 'Thanaphon Boonma', 'p_pol', ''], ['พระครู', 'สังฆรักษ์ อุตฺตโม', 'Sangharak Uttamo', 'p_pol', ''],
-      ['ดร.', 'จันทร์เพ็ญ วงศ์ไทย', 'Chanphen Wongthai', 'p_eng', ''], ['Mr.', 'David Miller', 'David Miller', 'p_eng', ''],
-      ['พระมหา ดร.', 'ปิยะ ปิยวณฺโณ', 'Piya Piyavanno', 'p_mpa', 'ผู้ช่วยศาสตราจารย์'], ['ดร.', 'กิตติ ศักดิ์สูง', 'Kitti Saksung', 'p_mpa', 'รองศาสตราจารย์'], ['ดร.', 'วรรณา คำแสง', 'Wanna Khamsaeng', 'p_mpa', ''],
+      ['ดร.', 'สมชาย ใจดี', 'Somchai Jaidee', 'p_bio', 'ผู้ช่วยศาสตราจารย์'], ['ดร.', 'วิภา รักเรียน', 'Wipa Rakrian', 'p_bio', 'รองศาสตราจารย์'],
+      ['ดร.', 'สุนทร แก้วมณี', 'Sunthon Kaewmanee', 'p_bio', ''], ['ดร.', 'อรุณี ศรีสุข', 'Arunee Srisuk', 'p_bio', ''], ['ดร.', 'อนุชา มั่นคง', 'Anucha Mankong', 'p_bio', ''],
+      ['ดร.', 'ประเสริฐ ทองดี', 'Prasert Thongdee', 'p_pharm', 'รองศาสตราจารย์'], ['ดร.', 'มาลัย ใจงาม', 'Malai Jaingam', 'p_pharm', 'ผู้ช่วยศาสตราจารย์'], ['ดร.', 'วีระ พากเพียร', 'Weera Pakphian', 'p_pharm', ''],
+      ['ดร.', 'ชัยวัฒน์ พรหมมา', 'Chaiwat Phromma', 'p_ph', 'รองศาสตราจารย์'], ['ดร.', 'ธนพล บุญมา', 'Thanaphon Boonma', 'p_ph', ''], ['ดร.', 'สุดา ปัญญาดี', 'Suda Panyadee', 'p_ph', ''],
+      ['ดร.', 'จันทร์เพ็ญ วงศ์ไทย', 'Chanphen Wongthai', 'p_ling', ''], ['Dr.', 'David Miller', 'David Miller', 'p_ling', ''],
+      ['ดร.', 'ปิยะ เจริญสุข', 'Piya Charoensuk', 'p_pop', 'ผู้ช่วยศาสตราจารย์'], ['ดร.', 'กิตติ ศักดิ์สูง', 'Kitti Saksung', 'p_pop', 'รองศาสตราจารย์'], ['ดร.', 'วรรณา คำแสง', 'Wanna Khamsaeng', 'p_pop', ''],
     ];
     const L = names.map((n, i) => ({ id: 'l_' + (i + 1), prefix: n[0], nameTh: n[1], nameEn: n[2], programId: n[3], position: n[4], active: true,
-      type: i === 4 || i === 12 ? 'adjunct' : i % 5 === 3 ? 'program' : 'responsible', degree: n[0].includes('ดร') ? 'ปร.ด.' : 'พธ.ม.', email: '' }));
+      type: i === 4 || i === 12 ? 'adjunct' : i % 5 === 3 ? 'program' : 'responsible', degree: 'ปร.ด.', email: '' }));
     const J = {
-      tci1: ['วารสารมหาจุฬาวิชาการ', 'วารสารสังคมศาสตร์และมานุษยวิทยาเชิงพุทธ', 'วารสาร มจร สังคมศาสตร์ปริทรรศน์'],
-      tci2: ['วารสารพุทธศาสตร์ศึกษา', 'วารสารบัณฑิตศึกษามหาจุฬาขอนแก่น', 'วารสารสหวิทยาการวิจัยและวิชาการ'],
-      scopus: ['Journal of Buddhist Education and Research', 'Asian Political Science Review', 'Journal of Language Teaching and Research'],
-      proc_nat: ['การประชุมวิชาการระดับชาติ มจร ครั้งที่ 5'], proc_intl: ['International Buddhist Research Seminar'],
+      tci1: ['วารสารวิจัยวิทยาศาสตร์สุขภาพ (ตัวอย่าง)', 'วารสารสังคมศาสตร์และประชากร (ตัวอย่าง)', 'วารสารภาษาและวัฒนธรรม (ตัวอย่าง)'],
+      tci2: ['วารสารบัณฑิตศึกษา (ตัวอย่าง)', 'วารสารสหวิทยาการวิจัย (ตัวอย่าง)', 'วารสารสาธารณสุขชุมชน (ตัวอย่าง)'],
+      scopus: ['Journal of Biomedical Research (Sample)', 'Asian Population Studies (Sample)', 'Journal of Language and Linguistics (Sample)'],
+      proc_nat: ['การประชุมวิชาการบัณฑิตศึกษาระดับชาติ (ตัวอย่าง)'], proc_intl: ['International Graduate Research Conference (Sample)'],
     };
-    const topics = ['การประยุกต์หลักพุทธธรรมในการพัฒนาคุณภาพชีวิตผู้สูงอายุ', 'การบริหารจัดการวัดเพื่อการพัฒนาชุมชนจังหวัดนครพนม', 'รูปแบบการจัดการเรียนรู้สังคมศึกษาตามแนวพุทธ',
-      'ธรรมาภิบาลในองค์กรปกครองส่วนท้องถิ่นลุ่มน้ำโขง', 'การมีส่วนร่วมทางการเมืองของประชาชนในภาคตะวันออกเฉียงเหนือ', 'English Communication Skills for Buddhist Monks',
-      'บทบาทพระสงฆ์ในการส่งเสริมวัฒนธรรมไทย-ลาว', 'การพัฒนาภาวะผู้นำเชิงพุทธของผู้บริหารสถานศึกษา', 'Mindfulness-Based Learning in Thai Higher Education', 'ภูมิปัญญาท้องถิ่นกับการท่องเที่ยวเชิงพุทธ'];
+    const topics = ['ฤทธิ์ต้านอนุมูลอิสระของสารสกัดจากสมุนไพรไทย', 'ปัจจัยที่มีผลต่อพฤติกรรมสุขภาพของผู้สูงอายุในชุมชนเมือง', 'การแสดงออกของยีนที่เกี่ยวข้องกับภาวะดื้อยา',
+      'การย้ายถิ่นของแรงงานและการเปลี่ยนแปลงโครงสร้างประชากร', 'ประสิทธิผลของโปรแกรมส่งเสริมสุขภาพจิตในนักศึกษา', 'Code-switching in Thai Online Discourse',
+      'ภาวะเจริญพันธุ์ต่ำกับนโยบายประชากรของประเทศไทย', 'การพัฒนาระบบนำส่งยาด้วยอนุภาคนาโน', 'Machine Learning for Early Detection of Diabetes', 'การประเมินความเสี่ยงสุขภาพจากฝุ่น PM2.5'];
     const cats = ['tci1', 'tci2', 'tci2', 'scopus', 'proc_nat', 'tci1', 'proc_intl', 'tci2', 'book', 'tci3'];
     const W = [];
     let k = 0;
@@ -1436,22 +1442,23 @@
     });
     const U = [
       { id: 'u_admin', username: 'admin', displayName: 'ผู้ดูแลระบบ', role: 'admin', passwordHash: await hashPw('admin', 'admin1234') },
-      { id: 'u_chair', username: 'chair', displayName: 'ประธานหลักสูตรพระพุทธศาสนา', role: 'chair', programId: 'p_bud', passwordHash: await hashPw('chair', 'chair1234') },
-      { id: 'u_lect', username: 'lecturer', displayName: 'พระมหาสมชาย ธมฺมวโร', role: 'lecturer', lecturerId: 'l_1', passwordHash: await hashPw('lecturer', 'lecturer1234') },
-      { id: 'u_exec', username: 'exec', displayName: 'ผู้อำนวยการวิทยาลัย', role: 'executive', passwordHash: await hashPw('exec', 'exec1234') },
+      { id: 'u_chair', username: 'chair', displayName: 'ประธานหลักสูตรชีวเคมี', role: 'chair', programId: 'p_bio', passwordHash: await hashPw('chair', 'chair1234') },
+      { id: 'u_lect', username: 'lecturer', displayName: 'ดร.สมชาย ใจดี', role: 'lecturer', lecturerId: 'l_1', passwordHash: await hashPw('lecturer', 'lecturer1234') },
+      { id: 'u_exec', username: 'exec', displayName: 'คณบดีบัณฑิตวิทยาลัย', role: 'executive', passwordHash: await hashPw('exec', 'exec1234') },
     ];
     const pub = (title, category, journal, yr, quartile, verified = true) => ({ id: uid('pub'), title, category, journal, year: yr, quartile: quartile || '', issn: '', url: '', verified });
     const X = [
-      { id: 'x_1', prefix: 'ดร.', nameTh: 'สมศักดิ์ วิชาการดี', nameEn: 'Somsak Wichakandee', position: 'รองศาสตราจารย์', affiliation: 'มหาวิทยาลัยตัวอย่าง (ข้อมูลสมมติ)', degreeLevel: 'phd', degreeName: 'Ph.D. (Political Science)',
-        role: 'กรรมการสอบวิทยานิพนธ์', programId: 'p_mpa', examLevel: 'master', standard: '2565', researchExp: true,
-        pubs: [pub('Local Governance and Buddhist Ethics in the Mekong Region', 'scopus', 'Asian Political Science Review', y - 2, 'Q3'), pub('Civic Participation in Northeastern Thailand', 'scopus', 'Journal of Asian Studies', y - 4, 'Q2'),
-          pub('ธรรมาภิบาลกับการบริหารท้องถิ่น', 'tci1', 'วารสารสังคมศาสตร์และมานุษยวิทยาเชิงพุทธ', y - 6), pub('นโยบายสาธารณะเชิงพุทธ', 'tci2', 'วารสารพุทธศาสตร์ศึกษา', y - 8), pub('การเมืองภาคประชาชน', 'tci1', 'วารสารมหาจุฬาวิชาการ', y - 1)] },
-      { id: 'x_2', prefix: 'พระมหา', nameTh: 'ตัวอย่าง ปญฺญาวโร', nameEn: 'Tuayang Panyavaro', position: 'ผู้ช่วยศาสตราจารย์', affiliation: 'วิทยาลัยสงฆ์ตัวอย่าง (ข้อมูลสมมติ)', degreeLevel: 'phd', degreeName: 'พธ.ด. (พระพุทธศาสนา)',
-        role: 'กรรมการสอบวิทยานิพนธ์', programId: 'p_mpa', examLevel: 'master', standard: '2565',
-        pubs: [pub('พุทธวิธีการบริหาร', 'tci2', 'วารสารบัณฑิตศึกษามหาจุฬาขอนแก่น', y - 3), pub('ภาวะผู้นำเชิงพุทธ', 'tci1', 'วารสาร มจร สังคมศาสตร์ปริทรรศน์', y - 5), pub('การพัฒนาชุมชนตามหลักสาราณียธรรม', 'tci3', 'วารสารตัวอย่าง', y - 2), pub('สังคหวัตถุกับการบริการ', 'tci2', 'วารสารพุทธศาสตร์ศึกษา', y - 1, '', false)] },
-      { id: 'x_3', prefix: 'นาย', nameTh: 'ทดสอบ ไม่มีปริญญาเอก', nameEn: 'Thodsob Example', position: '', affiliation: 'หน่วยงานตัวอย่าง (ข้อมูลสมมติ)', degreeLevel: 'master', degreeName: 'ร.ม.',
-        role: 'ผู้ทรงคุณวุฒิตรวจเครื่องมือวิจัย', programId: '', examLevel: 'master', standard: '2558', researchExp: true,
-        pubs: [pub('การบริหารงานบุคคลภาครัฐ', 'tci2', 'วารสารสหวิทยาการวิจัยและวิชาการ', y - 2)] },
+      { id: 'x_1', prefix: 'ดร.', nameTh: 'สมศักดิ์ วิชาการดี', nameEn: 'Somsak Wichakandee', position: 'รองศาสตราจารย์', affiliation: 'มหาวิทยาลัยตัวอย่าง (ข้อมูลสมมติ)', degreeLevel: 'phd', degreeName: 'Ph.D. (Biochemistry)',
+        role: 'กรรมการสอบวิทยานิพนธ์', programId: 'p_bio', examLevel: 'master', standard: '2565', researchExp: true,
+        pubs: [pub('Antioxidant Activity of Thai Herbal Extracts', 'scopus', 'Journal of Biomedical Research (Sample)', y - 2, 'Q3'), pub('Gene Expression in Drug-resistant Cells', 'scopus', 'Asian Journal of Molecular Biology (Sample)', y - 4, 'Q2'),
+          pub('ฤทธิ์ทางชีวภาพของสารสกัดจากพืชพื้นบ้าน', 'tci1', 'วารสารวิจัยวิทยาศาสตร์สุขภาพ (ตัวอย่าง)', y - 6), pub('การตรวจวัดเอนไซม์ในผู้ป่วยเบาหวาน', 'tci2', 'วารสารบัณฑิตศึกษา (ตัวอย่าง)', y - 8), pub('ชีวเคมีคลินิกเบื้องต้น', 'tci1', 'วารสารวิจัยวิทยาศาสตร์สุขภาพ (ตัวอย่าง)', y - 1)] },
+      { id: 'x_2', prefix: 'ดร.', nameTh: 'นภา ตัวอย่างดี', nameEn: 'Napa Tuayangdee', position: 'ผู้ช่วยศาสตราจารย์', affiliation: 'สถาบันวิจัยตัวอย่าง (ข้อมูลสมมติ)', degreeLevel: 'phd', degreeName: 'ปร.ด. (ประชากรศึกษา)',
+        role: 'กรรมการสอบวิทยานิพนธ์', programId: 'p_pop', examLevel: 'phd', standard: '2565',
+        pubs: [pub('Fertility Decline in Southeast Asia', 'scopus', 'Asian Population Studies (Sample)', y - 3, 'Q2'), pub('การย้ายถิ่นของแรงงานข้ามชาติ', 'tci1', 'วารสารสังคมศาสตร์และประชากร (ตัวอย่าง)', y - 5),
+          pub('ครอบครัวข้ามรุ่นในชนบทไทย', 'tci3', 'วารสารตัวอย่าง', y - 2), pub('Ageing Society and Care Policy', 'wos', 'Journal of Ageing and Society (Sample)', y - 1, 'Q3', false)] },
+      { id: 'x_3', prefix: 'นาย', nameTh: 'ทดสอบ ไม่มีปริญญาเอก', nameEn: 'Thodsob Example', position: '', affiliation: 'หน่วยงานตัวอย่าง (ข้อมูลสมมติ)', degreeLevel: 'master', degreeName: 'ส.ม.',
+        role: 'ผู้ทรงคุณวุฒิตรวจเครื่องมือวิจัย', programId: 'p_ph', examLevel: 'master', standard: '2558', researchExp: true,
+        pubs: [pub('การประเมินโครงการสุขภาพชุมชน', 'tci2', 'วารสารสาธารณสุขชุมชน (ตัวอย่าง)', y - 2)] },
     ].map((x) => Object.assign(x, { createdAt: new Date().toISOString(), createdBy: 'ตัวอย่าง', updatedAt: new Date().toISOString() }));
     const settings = Object.assign(defaultSettings(), { demo: true });
     return { programs: P, lecturers: L, works: W, users: U, externals: X, settings };
@@ -1480,7 +1487,7 @@
       const dark = cur === 'dark' || (cur === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
       const next = dark ? 'light' : 'dark';
       document.documentElement.dataset.theme = next;
-      try { localStorage.setItem('npc.theme', next); } catch (e) {}
+      try { localStorage.setItem('mugr.theme', next); } catch (e) {}
       updateThemeIcon();
     },
     logout: () => { logout(); },
@@ -1552,7 +1559,7 @@
     'reset-weights': () => { const def = defaultSettings().weights; Object.entries(def).forEach(([k, v]) => { const i = $(`[name="w:${k}"]`); if (i) i.value = v; }); toast('คืนค่าเริ่มต้นแล้ว — กดบันทึกเพื่อยืนยัน'); },
     disconnect: async () => {
       if (!(await confirmBox('ยกเลิกการเชื่อมต่อ', 'กลับไปใช้ข้อมูลที่เก็บในเครื่องนี้?', 'ยกเลิกการเชื่อมต่อ'))) return;
-      try { localStorage.removeItem('npc.api'); } catch (e) {}
+      try { localStorage.removeItem('mugr.api'); } catch (e) {}
       logout();
     },
     'push-remote': () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json'; inp.onchange = () => restoreFile(inp.files[0]); inp.click(); },
@@ -1637,7 +1644,7 @@
       ev.preventDefault();
       const url = ev.target.apiUrl.value.trim();
       if (url && !/^https:\/\/script\.google\.com\//.test(url)) { toast('URL ต้องขึ้นต้นด้วย https://script.google.com/', 'error'); return; }
-      try { if (url) localStorage.setItem('npc.api', url); else localStorage.removeItem('npc.api'); } catch (e) {}
+      try { if (url) localStorage.setItem('mugr.api', url); else localStorage.removeItem('mugr.api'); } catch (e) {}
       toast('บันทึกแล้ว — กรุณาเข้าสู่ระบบด้วยบัญชีใน Google Sheets');
       logout();
     }

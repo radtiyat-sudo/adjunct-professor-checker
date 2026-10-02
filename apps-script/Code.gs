@@ -1,5 +1,5 @@
 /**
- * ระบบติดตามผลงานวิชาการ — วิทยาลัยสงฆ์นครพนม
+ * ระบบติดตามผลงานวิชาการ บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)
  * ตัวเชื่อมฐานข้อมูล Google Sheets (Apps Script Web App)
  *
  * วิธีติดตั้ง
@@ -42,7 +42,7 @@ function setup() {
 
 // ---------------- HTTP ----------------
 function doGet() {
-  return json({ ok: true, service: 'npc-academic-tracker', time: new Date().toISOString() });
+  return json({ ok: true, service: 'mugr-academic-tracker', time: new Date().toISOString() });
 }
 
 function doPost(e) {
