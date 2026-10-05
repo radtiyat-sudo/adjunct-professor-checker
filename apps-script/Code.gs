@@ -2,13 +2,12 @@
  * ระบบติดตามผลงานวิชาการ บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)
  * ตัวเชื่อมฐานข้อมูล Google Sheets (Apps Script Web App)
  *
- * วิธีติดตั้ง
- * 1) เปิด Google Sheet > ส่วนขยาย > Apps Script > วางโค้ดนี้ในไฟล์ Code.gs
- * 2) กด + > HTML สร้างไฟล์ตามชื่อไฟล์ในโฟลเดอร์ apps-script/ (index, css, criteria, app1, app2, …)
- *    แล้ววางเนื้อหาแต่ละไฟล์ให้ตรงชื่อ (ไม่ต้องพิมพ์ .html)
- * 3) เลือกฟังก์ชัน setup แล้วกด Run หนึ่งครั้ง (อนุญาตสิทธิ์) — จะสร้างชีตและบัญชี admin / admin1234
- * 4) Deploy > New deployment > Web app · Execute as: Me · Who has access: Anyone (หรือเฉพาะในองค์กร)
- * 5) เปิด URL (.../exec) จะเห็นหน้าเข้าสู่ระบบ — เข้าด้วย admin แล้วเปลี่ยนรหัสผ่านทันที
+ * วิธีติดตั้ง (วางไฟล์นี้ไฟล์เดียว)
+ * 1) เปิด Google Sheet > ส่วนขยาย > Apps Script > ลบโค้ดเดิมใน Code.gs แล้ววางโค้ดนี้ทั้งหมด > บันทึก
+ * 2) (ไม่บังคับ) ใส่อีเมลผู้ดูแลระบบใน ADMIN_EMAILS ด้านล่าง
+ * 3) เลือกฟังก์ชัน setup แล้วกด Run หนึ่งครั้ง > อนุญาตสิทธิ์ (ใช้ชีต + เชื่อมต่อบริการภายนอก)
+ * 4) Deploy > New deployment > Web app · Execute as: Me · Who has access: Anyone
+ * 5) เปิด URL (.../exec) แล้วเข้าสู่ระบบ (admin / admin1234 หรือสมัครด้วยอีเมลใน ADMIN_EMAILS)
  *
  * สิทธิ์การเข้าถึงข้อมูลถูกตรวจซ้ำที่ฝั่งเซิร์ฟเวอร์นี้ (ไม่เชื่อข้อมูลจากเบราว์เซอร์)
  *
@@ -39,6 +38,8 @@ var SESSION_SECONDS = 6 * 60 * 60;
 
 // ---------------- setup ----------------
 function setup() {
+  // ทดสอบโหลดหน้าเว็บ (ทำให้ Google ขอสิทธิ์เชื่อมต่อบริการภายนอกตั้งแต่ตอนนี้)
+  try { loadUi(true); } catch (e) { Logger.log('โหลดหน้าเว็บไม่สำเร็จ: ' + e.message); }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   Object.keys(FIELDS).forEach(function (entity) {
     var sh = ss.getSheetByName(SHEET_NAMES[entity]) || ss.insertSheet(SHEET_NAMES[entity]);
@@ -53,23 +54,69 @@ function setup() {
 
 // ---------------- HTTP ----------------
 // เปิดหน้าเว็บของระบบ (ไฟล์ index.html ในโปรเจกต์ Apps Script) — ?ping=1 ใช้ทดสอบว่าเว็บแอปทำงาน
+// ---------------- หน้าเว็บ ----------------
+// หน้าเว็บทั้งหมดอยู่ในไฟล์ dist/mugr-app.html บน GitHub — วางแค่ Code.gs ไฟล์เดียวก็ใช้งานได้
+// เมื่อระบบถูกปรับปรุงบน GitHub หน้าเว็บจะอัปเดตเองภายใน ~6 ชั่วโมง (หรือเปิด URL ต่อท้าย ?refresh=1 เพื่อโหลดใหม่ทันที)
+var UI_URLS = [
+  'https://raw.githubusercontent.com/radtiyat-sudo/adjunct-professor-checker/claude/academic-work-tracking-system-mk0oiy/dist/mugr-app.html',
+];
+var UI_CACHE_SECONDS = 6 * 60 * 60;
+var UI_CHUNK = 25000; // CacheService เก็บได้ไม่เกิน 100KB ต่อคีย์
+
+// ?ping=1 ใช้ทดสอบว่าเว็บแอปทำงาน · ?refresh=1 โหลดหน้าเว็บจาก GitHub ใหม่
 function doGet(e) {
-  if (e && e.parameter && e.parameter.ping) return json({ ok: true, service: 'mugr-academic-tracker', time: new Date().toISOString() });
+  var p = (e && e.parameter) || {};
+  if (p.ping) return json({ ok: true, service: 'mugr-academic-tracker', time: new Date().toISOString() });
+  var html;
   try {
-    return HtmlService.createTemplateFromFile('index').evaluate()
-      .setTitle('ระบบติดตามผลงานวิชาการ | บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    html = loadUi(!!p.refresh);
   } catch (err) {
-    return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;max-width:640px;margin:40px auto;padding:0 16px">' +
-      '<h2>ติดตั้งไฟล์ไม่ครบ</h2><p>' + String(err && err.message || err).replace(/</g, '&lt;') + '</p>' +
-      '<p>ตรวจว่ามีไฟล์ HTML ครบ: index, css, criteria, app1 … app' + APP_PARTS + ' (สะกดตรงทุกตัว ไม่ต้องมี .html) แล้ว Deploy เป็น New version</p></div>');
+    // สำรอง: ถ้าโหลดจาก GitHub ไม่ได้ และมีไฟล์ HTML แบบแยกไฟล์ (index, css, app1…) ในโปรเจกต์ ให้ใช้ไฟล์เหล่านั้น
+    try {
+      return HtmlService.createTemplateFromFile('index').evaluate()
+        .setTitle('ระบบติดตามผลงานวิชาการ | บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)')
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    } catch (x) {
+      return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;max-width:640px;margin:40px auto;padding:0 16px">' +
+        '<h2>โหลดหน้าเว็บไม่สำเร็จ</h2><p>' + String(err && err.message || err).replace(/</g, '&lt;') + '</p>' +
+        '<p>ตรวจว่ารันฟังก์ชัน setup และกดอนุญาตสิทธิ์ "เชื่อมต่อบริการภายนอก" แล้ว จากนั้น Deploy เป็น New version และเปิดลิงก์อีกครั้ง</p></div>');
+    }
   }
+  return HtmlService.createHtmlOutput(html)
+    .setTitle('ระบบติดตามผลงานวิชาการ | บัณฑิตวิทยาลัย มหาวิทยาลัยมหิดล (MUGR)')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
-// จำนวนไฟล์ app1…appN (ตรงกับผลจาก tools/build_gas.py)
-var APP_PARTS = 9;
+function loadUi(refresh) {
+  var cache = CacheService.getScriptCache();
+  if (!refresh) {
+    var n = Number(cache.get('ui_n') || 0);
+    if (n) {
+      var keys = [];
+      for (var i = 0; i < n; i++) keys.push('ui_' + i);
+      var got = cache.getAll(keys), parts = [];
+      for (var j = 0; j < n; j++) { if (got['ui_' + j] == null) { parts = null; break; } parts.push(got['ui_' + j]); }
+      if (parts) return parts.join('');
+    }
+  }
+  var lastErr;
+  for (var u = 0; u < UI_URLS.length; u++) {
+    try {
+      var res = UrlFetchApp.fetch(UI_URLS[u] + '?v=' + Date.now(), { muteHttpExceptions: true });
+      var text = res.getResponseCode() === 200 ? res.getContentText('UTF-8') : '';
+      if (text.indexOf('</html>') < 0) throw new Error('ดาวน์โหลดหน้าเว็บไม่สำเร็จ (' + res.getResponseCode() + ')');
+      var put = {}, count = Math.ceil(text.length / UI_CHUNK);
+      for (var k = 0; k < count; k++) put['ui_' + k] = text.slice(k * UI_CHUNK, (k + 1) * UI_CHUNK);
+      put.ui_n = String(count);
+      try { cache.putAll(put, UI_CACHE_SECONDS); } catch (x) {}
+      return text;
+    } catch (err) { lastErr = err; }
+  }
+  throw lastErr || new Error('ไม่มีแหล่งหน้าเว็บ');
+}
 
-// รวมไฟล์ย่อย (css, criteria, app1, app2, …) เข้าในหน้า index
+// (ทางเลือก) รวมไฟล์ย่อยแบบเดิม (index, css, criteria, app1…) ถ้ายังมีไฟล์เหล่านั้นในโปรเจกต์
+var APP_PARTS = 9; // จำนวนไฟล์ app1…appN ของแบบแยกไฟล์ (ทางเลือก)
 function include(name) {
   try {
     return HtmlService.createHtmlOutputFromFile(name).getContent();

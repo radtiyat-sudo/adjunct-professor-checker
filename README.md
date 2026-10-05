@@ -142,24 +142,17 @@ python3 -m http.server 8000
 
 ---
 
-## ติดตั้งบน Google Sheets + Apps Script (แนะนำ — ใช้งานหลายคนพร้อมกัน)
-เปิดระบบจาก URL ของ Apps Script ได้เลย ไม่ต้องใช้ GitHub Pages
+## ติดตั้งบน Google Sheets + Apps Script (วางไฟล์เดียว)
 1. เปิด Google Sheet ที่จะใช้เก็บข้อมูล แล้วไปที่ **ส่วนขยาย > Apps Script**
-2. ในไฟล์ `Code.gs` ลบโค้ดเดิมให้หมด แล้ววางโค้ดจาก [`apps-script/Code.gs`](apps-script/Code.gs)
-3. สร้างไฟล์ HTML ให้ครบ **12 ไฟล์** โดยกด **+ > HTML** แล้วตั้งชื่อตามตาราง (ไม่ต้องพิมพ์ .html) จากนั้นวางเนื้อหาจากไฟล์ชื่อเดียวกันในโฟลเดอร์ [`apps-script/`](apps-script/)
-   หน้าเว็บถูกแบ่งเป็นไฟล์ย่อยเพื่อให้คัดลอกได้ครบ และ `Code.gs` จะรวมไฟล์ให้เองตอนเปิดเว็บ
+2. ในไฟล์ `Code.gs` ลบโค้ดเดิมให้หมด แล้ววางโค้ดจาก [`apps-script/Code.gs`](apps-script/Code.gs) **ไฟล์เดียว** แล้วกดบันทึก
+   หน้าเว็บทั้งหมดอยู่ที่ [`dist/mugr-app.html`](dist/mugr-app.html) และ `Code.gs` จะดาวน์โหลดจาก GitHub ให้เอง ไม่ต้องสร้างไฟล์ HTML
+3. (ไม่บังคับ) ใส่อีเมลผู้ดูแลระบบใน `var ADMIN_EMAILS = [];`
+4. เลือกฟังก์ชัน `setup` แล้วกด **Run** จากนั้นอนุญาตสิทธิ์ (ใช้ชีต + เชื่อมต่อบริการภายนอก)
+5. **Deploy > New deployment > Web app** ตั้ง Execute as: **Me** และ Who has access: **Anyone**
+6. เปิด URL ที่ลงท้ายด้วย `/exec` แล้วเข้าสู่ระบบด้วย `admin` / `admin1234` (เปลี่ยนรหัสผ่านทันที) หรือสมัครด้วยอีเมลที่อยู่ใน `ADMIN_EMAILS`
 
-   | ชื่อไฟล์ใน Apps Script | เนื้อหา |
-   |---|---|
-   | `index` | โครงหน้าเว็บ |
-   | `css` | ธีมสว่าง/มืด และ layout |
-   | `criteria` | เกณฑ์ ก.พ.อ. 2562 ค่าน้ำหนัก และเกณฑ์ผู้ทรงคุณวุฒิภายนอก |
-   | `app1` … `app9` | โค้ดการทำงานของระบบ (ต้องครบทั้ง 9 ไฟล์) |
-
-4. บันทึก เลือกฟังก์ชัน `setup` แล้วกด **Run** หนึ่งครั้ง จากนั้นอนุญาตสิทธิ์ ระบบจะสร้างชีต Programs, Lecturers, Works, Users, Externals, Settings และบัญชี `admin` / `admin1234`
-5. **Deploy > New deployment > Web app** ตั้ง Execute as: **Me** และ Who has access: **Anyone** (หรือ "Anyone within mahidol.ac.th" ถ้าต้องการให้เข้าได้เฉพาะคนในองค์กร)
-6. เปิด URL ที่ลงท้ายด้วย `/exec` แล้วเข้าสู่ระบบด้วย `admin` จากนั้น **เปลี่ยนรหัสผ่านทันที**
-7. ถ้าต้องการข้อมูลทดลอง ไปที่ จัดการระบบ > ข้อมูล > โหลดข้อมูลตัวอย่าง (ข้อมูลในชีตจะถูกแทนที่)
+เมื่อระบบบน GitHub ถูกปรับปรุง หน้าเว็บจะอัปเดตเองภายในราว 6 ชั่วโมง ถ้าต้องการโหลดใหม่ทันที ให้เปิด URL `/exec?refresh=1`
+แบบแยกไฟล์ (`apps-script/index.html`, `css.html`, `app1.html` …) ยังใช้ได้เป็นทางเลือก ถ้าโหลดจาก GitHub ไม่ได้ ระบบจะใช้ไฟล์เหล่านั้นแทน
 
 ทุกครั้งที่แก้โค้ด ให้ไปที่ **Deploy > Manage deployments > ✏ > Version: New version > Deploy** แล้ว URL จะยังเป็นอันเดิม
 
@@ -176,7 +169,8 @@ index.html            หน้าเว็บหลัก
 assets/styles.css     ธีม (สว่าง/มืด) และ layout responsive + รูปแบบการพิมพ์
 assets/criteria.js    เกณฑ์ ก.พ.อ. 2562, ค่าน้ำหนัก, เกณฑ์ผู้ทรงคุณวุฒิภายนอก, FAQ, ลิงก์ฐานข้อมูล
 assets/app.js         ตรรกะของระบบทั้งหมด
-apps-script/Code.gs   ฝั่งเซิร์ฟเวอร์ Apps Script + Google Sheets
+apps-script/Code.gs   ฝั่งเซิร์ฟเวอร์ Apps Script + Google Sheets (วางไฟล์นี้ไฟล์เดียว)
+dist/mugr-app.html     หน้าเว็บรวมไฟล์เดียวที่ Code.gs ดาวน์โหลดจาก GitHub (สร้างจาก tools/build_gas.py)
 apps-script/*.html     หน้าเว็บสำหรับ Apps Script แบ่งเป็นไฟล์ย่อย (สร้างจาก tools/build_gas.py)
 tools/build_gas.py     สคริปต์สร้างไฟล์ใน apps-script/
 ```

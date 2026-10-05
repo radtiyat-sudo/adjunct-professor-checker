@@ -71,6 +71,11 @@ if __name__ == '__main__':
         Path(sys.argv[2]).write_text(assemble(files), encoding='utf-8')
         print('เขียน', sys.argv[2])
         sys.exit()
+    # หน้าเว็บรวมไฟล์เดียว — Code.gs ดาวน์โหลดไฟล์นี้จาก GitHub (ติดตั้งแบบวาง Code.gs ไฟล์เดียว)
+    dist = ROOT / 'dist' / 'mugr-app.html'
+    dist.parent.mkdir(exist_ok=True)
+    dist.write_text(assemble(files), encoding='utf-8')
+    print(f'dist/mugr-app.html  {dist.stat().st_size // 1024} KB')
     for old in OUT.glob('*.html'):
         old.unlink()
     parts = sum(1 for n in files if n.startswith('app'))
