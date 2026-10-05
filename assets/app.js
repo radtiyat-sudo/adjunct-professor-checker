@@ -509,7 +509,14 @@
     const A = buildAlerts();
     const s = st();
     const welcome = S.user.displayName || S.user.username;
-    const demo = S.data.settings.demo ? `<div class="alert tone-accent mb">${ic('info')}<div><b>กำลังแสดงข้อมูลตัวอย่าง</b>ผู้ดูแลระบบสามารถล้างข้อมูลตัวอย่างได้ที่ จัดการระบบ &gt; ข้อมูล</div></div>` : '';
+    const empty = !S.data.programs.length && !S.data.lecturers.length && !S.data.externals.length;
+    const demo = empty
+      ? `<div class="card mb"><div class="card-body" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+          <div class="empty-ico tone-primary" style="margin:0">${ic('layers')}</div>
+          <div style="flex:1;min-width:220px"><h3 style="font-size:17px">ระบบยังไม่มีข้อมูล</h3>
+            <p class="muted" style="margin:4px 0 0">${isAdmin() ? 'เริ่มจากโหลดข้อมูลตัวอย่างเพื่อดูการทำงานของระบบ (ล้างทิ้งภายหลังได้) หรือเริ่มบันทึกข้อมูลจริงโดยเพิ่มหลักสูตรก่อน' : 'ผู้ดูแลระบบยังไม่ได้บันทึกข้อมูล'}</p></div>
+          ${isAdmin() ? `<div class="btn-row"><button class="btn primary" data-action="load-sample">${ic('download')}โหลดข้อมูลตัวอย่าง</button><a class="btn" href="#/programs">${ic('plus')}เพิ่มหลักสูตรแรก</a></div>` : ''}</div></div>`
+      : S.data.settings.demo ? `<div class="alert tone-accent mb">${ic('info')}<div><b>กำลังแสดงข้อมูลตัวอย่าง</b>ผู้ดูแลระบบสามารถล้างข้อมูลตัวอย่างได้ที่ จัดการระบบ &gt; ข้อมูล</div></div>` : '';
 
     // ข้อมูลกราฟ
     const inWin = works.filter((w) => inWindow(w) && w.status !== 'rejected');
@@ -1947,10 +1954,16 @@
       download(`backup_ผลงานวิชาการ_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), 'application/json');
     },
     'load-sample': async () => {
-      if (!(await confirmBox('โหลดข้อมูลตัวอย่าง', 'ข้อมูลปัจจุบันจะถูกแทนที่ด้วยข้อมูลตัวอย่าง (รวมบัญชีผู้ใช้ทดลอง: admin / admin1234) ต้องการดำเนินการต่อหรือไม่?', 'โหลดข้อมูลตัวอย่าง'))) return;
-      await replaceAll(await sampleData());
-      S.user = S.data.users.find((u) => u.role === 'admin');
-      persistSession(); renderUserChip(); toast('โหลดข้อมูลตัวอย่างแล้ว'); render();
+      if (!(await confirmBox('โหลดข้อมูลตัวอย่าง', 'หลักสูตร อาจารย์ ผลงาน และบุคคลภายนอก จะถูกแทนที่ด้วยข้อมูลตัวอย่าง · บัญชีผู้ใช้และการตั้งค่าเดิมยังอยู่ครบ (เพิ่มบัญชีทดลอง chair / lecturer / exec ให้ด้วย) ต้องการดำเนินการต่อหรือไม่?', 'โหลดข้อมูลตัวอย่าง'))) return;
+      const sample = await sampleData();
+      // คงบัญชีผู้ใช้และการตั้งค่าเดิมไว้ เพิ่มเฉพาะบัญชีทดลองที่ยังไม่มี
+      const names = new Set(S.data.users.map((u) => u.username));
+      sample.users = S.data.users.concat(sample.users.filter((u) => !names.has(u.username)));
+      sample.settings = Object.assign({}, S.data.settings, { demo: true });
+      const myId = S.user.id;
+      await replaceAll(sample);
+      S.user = byId(S.data.users, myId) || S.data.users.find((u) => u.role === 'admin');
+      persistSession(); renderUserChip(); toast('โหลดข้อมูลตัวอย่างแล้ว'); location.hash = '#/dashboard'; render();
     },
     'clear-data': async () => {
       if (!(await confirmBox('ล้างข้อมูลทั้งหมด', 'หลักสูตร อาจารย์ ผลงาน และผู้ใช้อื่นทั้งหมดจะถูกลบ เหลือเฉพาะบัญชีของคุณ แนะนำให้สำรองข้อมูลก่อน', 'ล้างข้อมูล'))) return;
@@ -2114,7 +2127,9 @@
     $('#syncState').textContent = S.remote ? 'เชื่อมต่อ Google Sheets' : 'บันทึกในเครื่องนี้';
     $('#syncState').classList.toggle('online', S.remote);
   }
+  function hideBoot() { const b = $('#bootMsg'); if (b) b.hidden = true; }
   function showApp() {
+    hideBoot();
     $('#loginView').hidden = true;
     $('#appView').hidden = false;
     renderUserChip();
@@ -2123,6 +2138,7 @@
     render();
   }
   function showLogin() {
+    hideBoot();
     $('#appView').hidden = true;
     $('#loginView').hidden = false;
     hydrateIcons();

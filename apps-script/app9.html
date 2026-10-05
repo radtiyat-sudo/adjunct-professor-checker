@@ -8,7 +8,9 @@
     $('#syncState').textContent = S.remote ? 'เชื่อมต่อ Google Sheets' : 'บันทึกในเครื่องนี้';
     $('#syncState').classList.toggle('online', S.remote);
   }
+  function hideBoot() { const b = $('#bootMsg'); if (b) b.hidden = true; }
   function showApp() {
+    hideBoot();
     $('#loginView').hidden = true;
     $('#appView').hidden = false;
     renderUserChip();
@@ -17,6 +19,7 @@
     render();
   }
   function showLogin() {
+    hideBoot();
     $('#appView').hidden = true;
     $('#loginView').hidden = false;
     hydrateIcons();

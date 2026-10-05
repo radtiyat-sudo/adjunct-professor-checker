@@ -231,7 +231,14 @@
     const A = buildAlerts();
     const s = st();
     const welcome = S.user.displayName || S.user.username;
-    const demo = S.data.settings.demo ? `<div class="alert tone-accent mb">${ic('info')}<div><b>กำลังแสดงข้อมูลตัวอย่าง</b>ผู้ดูแลระบบสามารถล้างข้อมูลตัวอย่างได้ที่ จัดการระบบ &gt; ข้อมูล</div></div>` : '';
+    const empty = !S.data.programs.length && !S.data.lecturers.length && !S.data.externals.length;
+    const demo = empty
+      ? `<div class="card mb"><div class="card-body" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+          <div class="empty-ico tone-primary" style="margin:0">${ic('layers')}</div>
+          <div style="flex:1;min-width:220px"><h3 style="font-size:17px">ระบบยังไม่มีข้อมูล</h3>
+            <p class="muted" style="margin:4px 0 0">${isAdmin() ? 'เริ่มจากโหลดข้อมูลตัวอย่างเพื่อดูการทำงานของระบบ (ล้างทิ้งภายหลังได้) หรือเริ่มบันทึกข้อมูลจริงโดยเพิ่มหลักสูตรก่อน' : 'ผู้ดูแลระบบยังไม่ได้บันทึกข้อมูล'}</p></div>
+          ${isAdmin() ? `<div class="btn-row"><button class="btn primary" data-action="load-sample">${ic('download')}โหลดข้อมูลตัวอย่าง</button><a class="btn" href="#/programs">${ic('plus')}เพิ่มหลักสูตรแรก</a></div>` : ''}</div></div>`
+      : S.data.settings.demo ? `<div class="alert tone-accent mb">${ic('info')}<div><b>กำลังแสดงข้อมูลตัวอย่าง</b>ผู้ดูแลระบบสามารถล้างข้อมูลตัวอย่างได้ที่ จัดการระบบ &gt; ข้อมูล</div></div>` : '';
 
     // ข้อมูลกราฟ
     const inWin = works.filter((w) => inWindow(w) && w.status !== 'rejected');

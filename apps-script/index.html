@@ -18,6 +18,15 @@
 </head>
 <body>
   <a class="skip-link" href="#main">ข้ามไปยังเนื้อหา</a>
+  <!-- แสดงระหว่างโหลด และแสดงข้อผิดพลาดแทนหน้าว่าง -->
+  <div class="boot-msg" id="bootMsg" role="status">กำลังโหลดระบบติดตามผลงานวิชาการ…</div>
+  <script>
+    window.addEventListener('error', function (e) {
+      var el = document.getElementById('bootMsg');
+      if (el && !el.hidden) el.innerHTML = '<b>เปิดระบบไม่สำเร็จ</b><br>' + String(e.message || 'เกิดข้อผิดพลาด').replace(/</g, '&lt;') +
+        '<br><small>ลองเปิดลิงก์ใหม่โดยต่อท้าย ?refresh=1 หรือแจ้งผู้ดูแลระบบพร้อมภาพหน้าจอนี้</small>';
+    });
+  </script>
 
   <!-- หน้าเข้าสู่ระบบ -->
   <section class="login" id="loginView" hidden>
