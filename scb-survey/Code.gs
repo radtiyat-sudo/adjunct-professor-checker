@@ -65,12 +65,20 @@ function doPost(e) {
 /** บันทึกคำตอบหนึ่งชุด (index.html เรียกผ่าน google.script.run เมื่อเปิดจากลิงก์ /exec) */
 function saveSurveyData(data) {
   if (!data || typeof data !== "object") throw new Error("ไม่พบข้อมูลแบบสอบถาม");
-  if (data.consent !== "ยินยอม") throw new Error("ผู้ตอบยังไม่ได้ให้ความยินยอม");
+  if (data.consent !== "ยินยอม" && data.consent !== "ไม่ยินยอม") {
+    throw new Error("ไม่พบการเลือกยินยอม/ไม่ยินยอม");
+  }
 
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
     var sheet = getSheet_();
+
+    // ไม่ยินยอม: บันทึกเฉพาะวันเวลาและสถานะ ไม่เก็บคำตอบอื่นใด
+    if (data.consent === "ไม่ยินยอม") {
+      sheet.appendRow([new Date(), "ไม่ยินยอม"]);
+      return { status: "success", row: sheet.getLastRow() };
+    }
 
     var row = [
       new Date(),
